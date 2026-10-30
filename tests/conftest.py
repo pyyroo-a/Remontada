@@ -56,8 +56,20 @@ def _bar_ath_available():
     return bool(root) and (Path(root) / "tactical" / "BAR-ATH_tactical_atd.txt").is_file()
 
 
+def _idsse_available():
+    try:
+        from remontada.paths import idsse_dir
+        return any(idsse_dir().glob("DFL_04_03_positions_raw_observed_*_DFL-MAT-J03WMX.xml"))
+    except FileNotFoundError:
+        return False
+
+
 def pytest_collection_modifyitems(config, items):
-    skip = pytest.mark.skip(reason="needs MTAH_DATA_DIR with the match data")
     for item in items:
-        if "realdata" in item.keywords and "bar_ath" in item.nodeid and not _bar_ath_available():
-            item.add_marker(skip)
+        if "realdata" not in item.keywords:
+            continue
+        if "idsse" in item.nodeid:
+            if not _idsse_available():
+                item.add_marker(pytest.mark.skip(reason="needs the IDSSE download"))
+        elif not _bar_ath_available():
+            item.add_marker(pytest.mark.skip(reason="needs MTAH_DATA_DIR with the match data"))
