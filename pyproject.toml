@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "remontada"
+version = "0.1.0"
+description = "Team Remontada's frame-level possession pipeline for More than a Hack 2027"
+requires-python = ">=3.11"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"remontada.vendor" = ["*.csv", "LICENSE-mtah2027", "README.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Short tracebacks always: a long one could print match data from a failed real-data test.
+addopts = "--tb=line"
+markers = ["realdata: needs the licensed match data or the IDSSE download; asserts summary numbers only"]
