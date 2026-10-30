@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import numpy as np
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False, eq=False)
 class FrameTable:
     """Positions in metres with the origin at the centre spot; NaN where something is not seen.
 
@@ -25,3 +25,8 @@ class FrameTable:
     @property
     def n_frames(self):
         return len(self.ball_xy)
+
+    def __repr__(self):
+        # Never the arrays: a printed table or a failed test must not show match data.
+        return "FrameTable({}, frames={}, slots={})".format(
+            self.match_id, self.n_frames, self.player_xy.shape[1])

@@ -49,8 +49,10 @@ def _read_positions(path):
         for line in handle:
             if line.startswith("<Frame "):
                 if current is not None:
-                    a = dict(_ATTR.findall(line))
-                    current(a)
+                    try:
+                        current(dict(_ATTR.findall(line)))
+                    except (KeyError, ValueError):  # a download cut off mid-line
+                        raise ValueError("IDSSE positions file looks truncated: {}".format(path.name)) from None
             elif line.startswith("<FrameSet"):
                 a = dict(_ATTR.findall(line))
                 half = halves.get(a.get("GameSection"))
@@ -79,8 +81,11 @@ def _read_positions(path):
 def load_idsse(match_id, folder=None):
     """(FrameTable, int8 label codes) for one IDSSE match."""
     folder = folder or idsse_dir()
-    info = _find(folder, "DFL_02_01_matchinformation", match_id).read_text(encoding="utf-8")
-    home = re.search(r'HomeTeamId="([^"]+)"', info).group(1)
+    info_path = _find(folder, "DFL_02_01_matchinformation", match_id)
+    home = re.search(r'HomeTeamId="([^"]+)"', info_path.read_text(encoding="utf-8"))
+    if home is None:
+        raise ValueError("IDSSE match information file has no home team: {}".format(info_path.name))
+    home = home.group(1)
     halves, order = _read_positions(_find(folder, "DFL_04_03_positions_raw_observed", match_id))
 
     teams = {}
@@ -124,3 +129,8 @@ def load_idsse(match_id, folder=None):
         ),
         labels,
     )
+
+
+def needs_fetch(path, size):
+    """True when a download is missing, empty or cut short."""
+    return not path.is_file() or path.stat().st_size != size

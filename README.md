@@ -20,8 +20,16 @@ Tests marked `realdata` need the data below and are skipped without it.
 The match data is licensed for the competition only and is **never** in this repository.
 
 - Put the official bundle in a folder outside the repo (`tactical/` and `broadcast/` inside it) and point `MTAH_DATA_DIR` at it.
-- IDSSE goes in `$MTAH_DATA_DIR/idsse` (or `REMONTADA_IDSSE_DIR`).
+- IDSSE goes in `$MTAH_DATA_DIR/idsse` (or `REMONTADA_IDSSE_DIR`). Fetch it with `python scripts/download_idsse.py` (about 2.5 GB).
 - **Never paste the match data, or any extract of it, into a hosted or cloud AI tool.** The competition terms forbid it.
+- Keep test tracebacks short (`--tb=line`, set in `pyproject.toml`): a long traceback from a failed real-data test could print match data. Do not override it when an AI tool can read your terminal.
+
+## Running it
+
+```bash
+python scripts/scoreboard.py
+python -m remontada.make_submission --method baseline --out outputs/remontada.csv
+```
 
 ## Credits
 

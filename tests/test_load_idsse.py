@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from remontada.load_idsse import load_idsse
+from remontada.load_idsse import load_idsse, needs_fetch
 from remontada.vendor import possession_metrics as pm
 
 LATE_SLOT = 2  # slots follow first appearance in the file: home, away, late home sub
@@ -76,3 +76,39 @@ def test_real_idsse_koeln_bayern():  # values measured 29 Oct 2026
     assert table.n_frames == 70708 + 1 + 75259
     counts = {c: int((labels == c).sum()) for c in (pm.H, pm.A, pm.D)}
     assert counts == {pm.H: 39111, pm.A: 46258, pm.D: 60598}
+
+
+def test_cut_inside_a_frame_line_raises_clearly(tmp_path):
+    root = write_synthetic_idsse(tmp_path)
+    path = next(root.glob("DFL_04_03_*"))
+    text = path.read_text(encoding="utf-8")
+    # Mid attribute of a player frame, as a dropped download ends. The referee is skipped anyway.
+    cut = text.index(' X="', text.index('TeamId="CLU-H"')) + 2
+    path.write_text(text[:cut], encoding="utf-8")
+    with pytest.raises(ValueError, match="positions"):
+        load_idsse("TEST01", root)
+
+
+def test_empty_positions_file_raises_clearly(tmp_path):
+    root = write_synthetic_idsse(tmp_path)
+    next(root.glob("DFL_04_03_*")).write_text("", encoding="utf-8")
+    with pytest.raises(ValueError, match="positions"):
+        load_idsse("TEST01", root)
+
+
+def test_empty_match_information_names_the_file(tmp_path):
+    root = write_synthetic_idsse(tmp_path)
+    next(root.glob("DFL_02_01_*")).write_text("", encoding="utf-8")
+    with pytest.raises(ValueError, match="matchinformation"):
+        load_idsse("TEST01", root)
+
+
+def test_needs_fetch(tmp_path):
+    path = tmp_path / "f.xml"
+    assert needs_fetch(path, 5)  # missing
+    path.write_bytes(b"")
+    assert needs_fetch(path, 5)  # empty
+    path.write_bytes(b"abc")
+    assert needs_fetch(path, 5)  # cut short
+    path.write_bytes(b"abcde")
+    assert not needs_fetch(path, 5)

@@ -37,8 +37,9 @@ def _hide_ball(table, level, rng):
         start = int(rng.integers(table.n_frames))
         length = max(1, int(rng.exponential(mean_frames)))
         stretch = hidden[start:start + length]
-        count += int(stretch.size - stretch.sum())
-        stretch[:] = True
+        fresh = np.flatnonzero(~stretch)[: target - count]  # never overshoot the target
+        stretch[fresh] = True
+        count += len(fresh)
     return hidden
 
 

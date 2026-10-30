@@ -9,7 +9,7 @@ import shutil
 import sys
 import urllib.request
 
-from remontada.load_idsse import MATCH_IDS, file_names
+from remontada.load_idsse import MATCH_IDS, file_names, needs_fetch
 from remontada.paths import idsse_dir
 
 BASE_URL = "https://huggingface.co/datasets/pysport/idsse-data/resolve/main/"
@@ -35,7 +35,7 @@ def main():
         for name in file_names(match_id).values():
             url, path = BASE_URL + name, folder / name
             size = remote_size(url)
-            if path.is_file() and path.stat().st_size == size:
+            if not needs_fetch(path, size):
                 print("ok      ", name)
                 continue
             print("fetching", name, "({:.0f} MB)".format(size / 1e6), flush=True)

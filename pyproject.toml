@@ -16,4 +16,6 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Short tracebacks always: a long one could print match data from a failed real-data test.
+addopts = "--tb=line"
 markers = ["realdata: needs the licensed match data or the IDSSE download; asserts summary numbers only"]

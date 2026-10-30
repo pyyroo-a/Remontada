@@ -57,3 +57,11 @@ def test_track_breaks_keep_team_and_player_count(clean_table):
 
     for team in (0, 1):
         np.testing.assert_array_equal(visible(out, team), visible(clean_table, team))
+
+
+@pytest.mark.parametrize("n_frames", [25, 100, 250])
+def test_short_tables_never_lose_every_ball_frame(n_frames):
+    table = synthetic_table([(0.0, 0.0)] * n_frames, [[(1.0, 1.0)]] * n_frames, teams=[0])
+    for seed in range(300):
+        hidden = np.isnan(degrade(table, LEVELS["heavy"], seed).ball_xy[:, 0]).sum()
+        assert hidden == int(0.60 * n_frames)

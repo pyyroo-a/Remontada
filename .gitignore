@@ -8,6 +8,15 @@ outputs/
 *_homography.csv
 *_smart_tagging.xml
 DFL_*.xml
+*.part
+
+# Caches and exports: a saved frame table is match data too
+*.npy
+*.npz
+*.parquet
+*.pkl
+*.feather
+/*.csv
 
 # Local tooling
 .venv/
