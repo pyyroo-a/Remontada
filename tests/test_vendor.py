@@ -1,16 +1,17 @@
 import hashlib
+from pathlib import Path
 
 from remontada.vendor import PUBLIC_GT_PATH
 from remontada.vendor import possession_metrics as pm
 
-# SHA-256 of the upstream files at metrica-sports/more-than-a-hack-2027 commit f8f2629.
-VENDORED_SHA = "32c878630c74fb52a90c301485d6dff806509d8e933b1177b6035ee8e8f42b80"
-PUBLIC_GT_SHA = "24d13807dfd2173b3b567a5f1fa0c597d42653a21d808da6027f98583d446e34"
+# SHA-256 of the upstream files at metrica-sports/more-than-a-hack-2027 commit f8f2629, with \n
+# line endings, so the check gives the same answer whatever git does to line endings on Windows.
+VENDORED_SHA = "341bad48904b489d6e875397b27687f5d6a4d22a397f3dc8af3a00d48f16874d"
+PUBLIC_GT_SHA = "e596a9af9626c623bb94be6fd350e12ee9a75c76a696cfadca3bc01735e92487"
 
 
 def sha256_of(path):
-    with open(path, "rb") as handle:
-        return hashlib.sha256(handle.read()).hexdigest()
+    return hashlib.sha256(Path(path).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
 
 def test_vendored_scorer_is_unchanged():
