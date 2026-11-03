@@ -8,6 +8,7 @@ dead, else H or A. Coordinates are already metres from the centre spot.
 The positions file is about 420 MB, so it is streamed line by line and read with a regex.
 """
 import re
+from pathlib import Path
 
 import numpy as np
 
@@ -129,6 +130,35 @@ def load_idsse(match_id, folder=None):
         ),
         labels,
     )
+
+
+def load_idsse_cached(match_id, folder=None):
+    """Same as load_idsse, but keeps a copy in <folder>/cache/<match_id>.npz for fast reloads.
+
+    The XML takes about 40 s per match; the cache a fraction of a second. Delete the cache folder
+    after changing load_idsse.
+    """
+    folder = Path(folder or idsse_dir())
+    path = folder / "cache" / "{}.npz".format(match_id)
+    if path.is_file():
+        with np.load(path) as saved:
+            table = FrameTable(
+                match_id=match_id,
+                fps=int(saved["fps"]),
+                pitch=tuple(float(v) for v in saved["pitch"]),
+                ball_xy=saved["ball_xy"],
+                ball_z=saved["ball_z"],
+                player_xy=saved["player_xy"],
+                player_team=saved["player_team"],
+                graded_runs=[(int(a), int(b)) for a, b in saved["graded_runs"]],
+            )
+            return table, saved["labels"]
+    table, labels = load_idsse(match_id, folder)
+    path.parent.mkdir(exist_ok=True)
+    np.savez(path, fps=table.fps, pitch=np.array(table.pitch), ball_xy=table.ball_xy,
+             ball_z=table.ball_z, player_xy=table.player_xy, player_team=table.player_team,
+             graded_runs=np.array(table.graded_runs), labels=labels)
+    return table, labels
 
 
 def needs_fetch(path, size):
