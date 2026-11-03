@@ -1,17 +1,19 @@
 """Regenerate our submission from the data bundle with one command.
 
-    python -m remontada.make_submission --method baseline --out outputs/remontada.csv
+    python -m remontada.make_submission --method hmm --out outputs/remontada_hmm.csv
 
-Prints summary numbers only: never rows, positions or frames of the match data.
+Prints only that the file is valid (row count, official checker, fingerprint): never label or
+possession counts, rows, positions or frames of the match data (rules clarification, 4 Nov 2026).
 """
 import argparse
-from collections import Counter
 from pathlib import Path
 
+from remontada import pipeline
 from remontada.baseline import nearest_team, smooth
+from remontada.evidence import load_counts
 from remontada.load_bar_ath import load_bar_ath
 from remontada.scoreboard import mask_ungraded
-from remontada.stats import possession_summary
+from remontada.smart_tagging import load_smart_tagging
 from remontada.submission import sha256, write_csv
 from remontada.vendor import possession_metrics as pm
 
@@ -24,12 +26,16 @@ def predict(method):
     table = load_bar_ath()
     if method == "baseline":
         return smooth(nearest_team(table), BASELINE_WINDOW), table.graded_runs
+    if method == "hmm":
+        counts = load_counts(pipeline.EVIDENCE_PATH)
+        codes = pipeline.predict(table, counts, pipeline.load_settings(), load_smart_tagging())
+        return codes, table.graded_runs
     raise ValueError("unknown method: {}".format(method))
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--method", default="baseline", choices=["baseline"])
+    parser.add_argument("--method", default="baseline", choices=["baseline", "hmm"])
     parser.add_argument("--out", default="outputs/remontada.csv")
     args = parser.parse_args(argv)
 
@@ -41,10 +47,8 @@ def main(argv=None):
     if problem:
         raise SystemExit("invalid submission: {}".format(problem))
 
-    counts = Counter(pm.LABELS[code] for code in masked.tolist())
-    summary = possession_summary(masked, runs)
-    print("rows {}  labels {}".format(len(masked), dict(sorted(counts.items()))))
-    print("possessions {}  mean {:.1f} s".format(summary["n_possessions"], summary["mean_s"]))
+    # Validity only (rules clarification, 4 Nov 2026): no label or possession counts from our match.
+    print("rows {}  valid".format(len(masked)))
     print("sha256 {}".format(sha256(path)))
     return path
 

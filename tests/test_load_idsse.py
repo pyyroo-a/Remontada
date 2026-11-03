@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from remontada.load_idsse import load_idsse, needs_fetch
+from remontada.load_idsse import load_idsse, load_idsse_cached, needs_fetch
 from remontada.vendor import possession_metrics as pm
 
 LATE_SLOT = 2  # slots follow first appearance in the file: home, away, late home sub
@@ -112,3 +112,20 @@ def test_needs_fetch(tmp_path):
     assert needs_fetch(path, 5)  # cut short
     path.write_bytes(b"abcde")
     assert not needs_fetch(path, 5)
+
+
+def test_cached_load_matches_plain_load(tmp_path):
+    root = write_synthetic_idsse(tmp_path)
+    plain_table, plain_labels = load_idsse("TEST01", root)
+    for call in range(2):  # the first call writes the cache, the second must read it
+        table, labels = load_idsse_cached("TEST01", root)
+        np.testing.assert_array_equal(labels, plain_labels)
+        np.testing.assert_array_equal(table.player_xy, plain_table.player_xy)
+        np.testing.assert_array_equal(table.ball_xy, plain_table.ball_xy)
+        np.testing.assert_array_equal(table.ball_z, plain_table.ball_z)
+        np.testing.assert_array_equal(table.player_team, plain_table.player_team)
+        assert table.graded_runs == plain_table.graded_runs and table.pitch == plain_table.pitch
+        assert (table.match_id, table.fps) == (plain_table.match_id, plain_table.fps)
+        if call == 0:
+            next(root.glob("DFL_04_03_*TEST01.xml")).unlink()
+    assert (root / "cache" / "TEST01.npz").is_file()

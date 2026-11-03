@@ -1,0 +1,8 @@
+{
+  "temperature": 0.4,
+  "switch": 4,
+  "to_dead": 32,
+  "from_dead": 32,
+  "ball_hints": true,
+  "tag_hints": false
+}

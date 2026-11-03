@@ -13,9 +13,11 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "remontada.vendor" = ["*.csv", "LICENSE-mtah2027", "README.md"]
+"remontada.config" = ["*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# Short tracebacks always: a long one could print match data from a failed real-data test.
-addopts = "--tb=line"
+# Short tracebacks always, and never replay what a failed test printed: either could show match
+# data from a failed real-data test.
+addopts = "--tb=line --show-capture=no"
 markers = ["realdata: needs the licensed match data or the IDSSE download; asserts summary numbers only"]
