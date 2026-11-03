@@ -37,7 +37,7 @@ def load_settings(path=None):
     )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, repr=False)
 class Features:
     """Everything the decoder needs from one table, worked out once and reused across settings."""
     team: np.ndarray
@@ -45,6 +45,10 @@ class Features:
     slow: np.ndarray
     ball_clues: np.ndarray  # how many ball-dead clues are true on each frame (0 to 3)
     graded_runs: list
+
+    def __repr__(self):
+        # Never the arrays: on BAR-ATH they are frame-by-frame extracts of the match.
+        return "Features(frames={})".format(len(self.team))
 
     def counts(self, labels):
         return count_cells(self.team, self.team_mirrored, self.slow, labels)

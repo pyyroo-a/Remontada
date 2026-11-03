@@ -4,5 +4,5 @@
   "to_dead": 32,
   "from_dead": 32,
   "ball_hints": true,
-  "tag_hints": true
+  "tag_hints": false
 }

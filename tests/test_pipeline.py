@@ -51,3 +51,14 @@ def test_leave_one_out_never_uses_the_scored_match():
 def test_settings_file_loads():
     s = load_settings()
     assert s.temperature > 0 and s.costs.switch > 0
+
+
+def test_features_repr_hides_the_match():
+    # like FrameTable and Tag: features of our match must never print frame by frame
+    table, _ = _two_halves_of_possession()
+    assert repr(features(table)) == "Features(frames=400)"
+
+
+def test_shipped_settings_leave_tags_off():
+    # Ashen, 3 Nov: tags stacked up and cannot be tested on IDSSE, so plan 2 ships without them
+    assert load_settings().tag_hints is False

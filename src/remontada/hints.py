@@ -5,7 +5,7 @@ tuned. Tag meanings come from the code names only, never from looking at BAR-ATH
 """
 import numpy as np
 
-from remontada.dead_ball import ball_missing_long, ball_out, ball_still
+from remontada.dead_ball import ball_out, ball_still
 from remontada.vendor.possession_metrics import D
 
 ATTACKING = {"BUILD UP", "PROGRESSION", "ATTACKING TRANSITION", "CREATING CHANCES",
@@ -16,9 +16,13 @@ SET_PIECES = "SET PIECES"  # hint D on the first half: the ball is dead before t
 
 
 def ball_hints(table, weight):
-    """weight added to D for each ball-dead clue that is true on a frame."""
+    """weight added to D for each ball-dead clue (ball out, ball still) that is true on a frame.
+
+    "Ball missing long" is not a hint (Ashen, 3 Nov 2026, after the plan 2 review): on messy IDSSE
+    it fired more in live play than in dead ball, and dropping it never lowered spellF1.
+    """
     out = np.zeros((table.n_frames, 3))
-    out[:, D] = weight * (ball_out(table).astype(int) + ball_still(table) + ball_missing_long(table))
+    out[:, D] = weight * (ball_out(table).astype(int) + ball_still(table))
     return out
 
 

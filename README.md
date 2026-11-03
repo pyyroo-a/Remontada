@@ -32,7 +32,7 @@ python scripts/scoreboard.py --method hmm                   # our decoder on IDS
 python scripts/scoreboard.py --method hmm --no-ball-hints   # the same without ball-dead hints
 python scripts/tune_rough.py                                # rough settings grid (plan 2)
 python scripts/tune_rough.py --write-counts                 # relearn config/evidence_idsse.json
-python -m remontada.make_submission --method hmm --out outputs/remontada.csv
+python -m remontada.make_submission --method hmm --out outputs/remontada_hmm.csv
 ```
 
 The decoder's settings are in `src/remontada/config/hmm_v1.json`.

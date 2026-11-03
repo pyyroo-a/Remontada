@@ -41,3 +41,10 @@ def test_intervals_outside_the_match_are_clipped():
     h = tag_hints([Tag("BUILD UP", -50, 5, 1, None), Tag("BUILD UP", 195, 400, 1, None)], 200, 1.0)
     assert h.shape == (200, 3) and h[:5, A].sum() == 5 and h[195:, A].sum() == 5
     assert (tag_hints([Tag("SET PIECES", 300, 400, -1, None), Tag("BUILD UP", 50, 40, 0, None)], 200, 1.0) == 0).all()
+
+
+def test_a_long_missing_ball_is_not_a_hint():
+    # dropped after the plan 2 review (Ashen, 3 Nov): on messy data it fired more in live play
+    ball = [(0.0, 0.0)] * 10 + [(float("nan"), float("nan"))] * 100 + [(0.0, 0.0)] * 10
+    h = ball_hints(synthetic_table(ball, [[(30.0, 0.0)]] * 120, teams=[0]), 1.0)
+    assert (h[10:110] == 0).all()
