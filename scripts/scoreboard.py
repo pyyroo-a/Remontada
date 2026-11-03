@@ -5,7 +5,8 @@
     python scripts/scoreboard.py --method hmm --no-ball-hints
 
 For the decoder, the evidence table that scores a match is learned on the other six matches.
-BAR-ATH is scored on the public 5 minutes only, as a pipeline check, never to choose anything.
+Nothing here touches our match: the rules (clarified 4 Nov 2026) allow tuning and checking only on
+external data, never on the ground-truth possession data, the public 5 minutes included.
 """
 import argparse
 from dataclasses import replace
@@ -15,14 +16,9 @@ import numpy as np
 from remontada import pipeline
 from remontada.baseline import nearest_team, smooth
 from remontada.degrade import LEVELS, degrade
-from remontada.evidence import load_counts
-from remontada.load_bar_ath import load_bar_ath
 from remontada.load_idsse import MATCH_IDS, load_idsse_cached
 from remontada.lomo import counts_by_item, decode_all, idsse_features, leave_one_out_counts
 from remontada.scoreboard import score
-from remontada.smart_tagging import load_smart_tagging
-from remontada.vendor import PUBLIC_GT_PATH
-from remontada.vendor import possession_metrics as pm
 
 WINDOW = 50
 SEED = 0
@@ -67,17 +63,6 @@ def main(argv=None):
         print("{}   {}".format(match_id, "".join(cells)))
     means = [np.mean(totals[name], axis=0) for name in LEVELS]
     print("mean     " + "".join("{:.4f} {:.4f}".format(*m).ljust(26) for m in means))
-
-    table = load_bar_ath()
-    if args.method == "baseline":
-        pred = smooth(nearest_team(table), WINDOW)
-    else:
-        pred = pipeline.predict(table, load_counts(pipeline.EVIDENCE_PATH), settings,
-                                load_smart_tagging())
-    gt = pm.label_codes(pm.read_label_csv(PUBLIC_GT_PATH))
-    s = score(gt, pred)
-    print("\nBAR-ATH public 5 minutes (pipeline check only): spellF1 {:.4f} macroF1 {:.4f}".format(
-        s["spell_f1"], s["macro_f1"]))
 
 
 if __name__ == "__main__":
