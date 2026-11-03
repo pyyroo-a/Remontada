@@ -9,7 +9,7 @@ import numpy as np
 from remontada.baseline import nearest_team, smooth
 from remontada.degrade import LEVELS, degrade
 from remontada.load_bar_ath import load_bar_ath
-from remontada.load_idsse import MATCH_IDS, load_idsse
+from remontada.load_idsse import MATCH_IDS, load_idsse_cached
 from remontada.scoreboard import score
 from remontada.vendor import PUBLIC_GT_PATH
 from remontada.vendor import possession_metrics as pm
@@ -23,7 +23,7 @@ def main():
     print("match    " + "".join("{:<26}".format(name) for name in LEVELS))
     totals = {name: [] for name in LEVELS}
     for match_id in MATCH_IDS:
-        table, labels = load_idsse(match_id)
+        table, labels = load_idsse_cached(match_id)
         cells = []
         for name, level in LEVELS.items():
             s = score(labels, smooth(nearest_team(degrade(table, level, SEED)), WINDOW))

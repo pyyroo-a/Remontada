@@ -2,6 +2,10 @@
 
 The levels span a wide range on purpose and are not taken from BAR-ATH (decided 30 Oct 2026): a
 setting is only kept if it works across the whole sweep.
+
+Degrade v2 (decided 3 Nov 2026): positions wobble by a slow drift, not a fresh jump every frame,
+and half of the hidden ball frames start where DATA.md says real trackers lose the ball (ball in
+the air, or players crowded around it).
 """
 from collections import deque
 from dataclasses import dataclass, replace
@@ -9,6 +13,11 @@ from dataclasses import dataclass, replace
 import numpy as np
 
 SPARE_SLOTS_PER_TEAM = 2
+WOBBLE_TIME_S = 1.0  # how long a wobble takes to fade
+HARD_SHARE = 0.5  # share of the hidden ball frames placed on hard frames first
+AIR_Z_M = 1.0
+CROWD_RADIUS_M = 3.0
+CROWD_PLAYERS = 3
 
 
 @dataclass(frozen=True)
@@ -27,20 +36,50 @@ LEVELS = {
 }
 
 
+def hard_frames(table):
+    """Frames where a real tracker tends to lose the ball: ball in the air, or a crowd near it."""
+    with np.errstate(invalid="ignore"):
+        air = table.ball_z > AIR_Z_M
+        gap = np.hypot(*(table.player_xy - table.ball_xy[:, None, :]).transpose(2, 0, 1))
+        crowd = (gap <= CROWD_RADIUS_M).sum(axis=1) >= CROWD_PLAYERS
+    return air | crowd
+
+
 def _hide_ball(table, level, rng):
-    """NaN stretches of exponential length until the target share of frames is hidden."""
+    """NaN stretches of exponential length until the target share of frames is hidden.
+
+    The first HARD_SHARE of the target starts on hard frames that are still visible, the rest
+    anywhere.
+    """
     hidden = np.zeros(table.n_frames, dtype=bool)
     target = int(level.ball_hidden_share * table.n_frames)
     mean_frames = level.ball_gap_mean_s * table.fps
+    hard = hard_frames(table)
     count = 0
     while count < target:
-        start = int(rng.integers(table.n_frames))
+        open_hard = np.flatnonzero(hard & ~hidden) if count < HARD_SHARE * target else []
+        if len(open_hard):
+            start = int(open_hard[rng.integers(len(open_hard))])
+        else:  # past the hard share, or every hard frame is already hidden
+            start = int(rng.integers(table.n_frames))
         length = max(1, int(rng.exponential(mean_frames)))
         stretch = hidden[start:start + length]
         fresh = np.flatnonzero(~stretch)[: target - count]  # never overshoot the target
         stretch[fresh] = True
         count += len(fresh)
     return hidden
+
+
+def _wobble(player_xy, noise_m, fps, rng):
+    """Slow drift per slot and axis: each frame keeps most of the last frame's error."""
+    rho = np.exp(-1.0 / (fps * WOBBLE_TIME_S))
+    kicks = rng.normal(0.0, noise_m, player_xy.shape)
+    error = np.empty_like(kicks)
+    error[0] = kicks[0]
+    fresh = np.sqrt(1.0 - rho ** 2)
+    for t in range(1, len(kicks)):
+        error[t] = rho * error[t - 1] + fresh * kicks[t]
+    return player_xy + error
 
 
 def _break_tracks(player_xy, teams, level, fps, rng):
@@ -94,7 +133,7 @@ def degrade(table, level, seed):
 
     player_xy, teams = table.player_xy, table.player_team
     if level.position_noise_m > 0:
-        player_xy = player_xy + rng.normal(0.0, level.position_noise_m, player_xy.shape)
+        player_xy = _wobble(player_xy, level.position_noise_m, table.fps, rng)
     if level.track_breaks_per_min > 0:
         player_xy, teams = _break_tracks(player_xy, teams, level, table.fps, rng)
 

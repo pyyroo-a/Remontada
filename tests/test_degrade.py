@@ -1,8 +1,10 @@
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
 from conftest import synthetic_table
-from remontada.degrade import LEVELS, Level, degrade
+from remontada.degrade import LEVELS, Level, degrade, hard_frames
 
 N_FRAMES = 25000
 
@@ -65,3 +67,26 @@ def test_short_tables_never_lose_every_ball_frame(n_frames):
     for seed in range(300):
         hidden = np.isnan(degrade(table, LEVELS["heavy"], seed).ball_xy[:, 0]).sum()
         assert hidden == int(0.60 * n_frames)
+
+
+def test_wobble_drifts_slowly(clean_table):
+    out = degrade(clean_table, Level(0.0, 0.0, 0.5, 0.0), seed=0)
+    noise = out.player_xy - clean_table.player_xy
+    step = np.nanstd(np.diff(noise, axis=0))
+    assert step < 0.2  # per-frame jumps of the old noise were about 0.71 m
+
+
+def test_hard_frames_are_air_or_crowd():
+    ball = [(0.0, 0.0)] * 3
+    players = [[(10, 0), (20, 0), (30, 0)], [(1, 0), (0, 1), (-1, 0)], [(10, 0), (20, 0), (30, 0)]]
+    table = replace(synthetic_table(ball, players, teams=[0, 1, 0]), ball_z=np.array([0.2, 0.2, 1.5]))
+    assert hard_frames(table).tolist() == [False, True, True]
+
+
+def test_hiding_prefers_hard_frames(clean_table):
+    # ball in the air for 10 s in every 50 s; heavy hiding must hit those frames more often
+    hard = (np.arange(N_FRAMES) // 250) % 5 == 0
+    table = replace(clean_table, ball_z=np.where(hard, 2.0, 0.1))
+    hidden = np.isnan(degrade(table, LEVELS["heavy"], seed=0).ball_xy[:, 0])
+    assert hidden.sum() == int(0.60 * len(hidden))
+    assert hidden[hard].mean() > hidden[~hard].mean() + 0.1
