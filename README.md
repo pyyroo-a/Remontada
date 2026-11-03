@@ -27,11 +27,17 @@ The match data is licensed for the competition only and is **never** in this rep
 ## Running it
 
 ```bash
-python scripts/scoreboard.py
-python -m remontada.make_submission --method baseline --out outputs/remontada.csv
+python scripts/scoreboard.py                                # the official baseline on IDSSE
+python scripts/scoreboard.py --method hmm                   # our decoder on IDSSE
+python scripts/scoreboard.py --method hmm --no-ball-hints   # the same without ball-dead hints
+python scripts/tune_rough.py                                # rough settings grid (plan 2)
+python scripts/tune_rough.py --write-counts                 # relearn config/evidence_idsse.json
+python -m remontada.make_submission --method hmm --out outputs/remontada.csv
 ```
+
+The decoder's settings are in `src/remontada/config/hmm_v1.json`.
 
 ## Credits
 
 - The official scorer and public ground truth in `src/remontada/vendor/` come from [metrica-sports/more-than-a-hack-2027](https://github.com/metrica-sports/more-than-a-hack-2027) (MIT).
-- IDSSE: Bassek, M. et al. "An integrated dataset of synchronized spatiotemporal and event data in elite soccer." *Scientific Data* 12, 195 (2025). doi:10.1038/s41597-025-04505-y. Licensed CC BY 4.0, mirrored at [pysport/idsse-data](https://huggingface.co/datasets/pysport/idsse-data).
+- IDSSE: Bassek, M. et al. "An integrated dataset of synchronized spatiotemporal and event data in elite soccer." *Scientific Data* 12, 195 (2025). doi:10.1038/s41597-025-04505-y. Licensed CC BY 4.0, mirrored at [pysport/idsse-data](https://huggingface.co/datasets/pysport/idsse-data). `src/remontada/config/evidence_idsse.json` holds counts derived from it (CC BY 4.0).

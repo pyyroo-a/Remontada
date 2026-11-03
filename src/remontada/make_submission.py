@@ -8,9 +8,12 @@ import argparse
 from collections import Counter
 from pathlib import Path
 
+from remontada import pipeline
 from remontada.baseline import nearest_team, smooth
+from remontada.evidence import load_counts
 from remontada.load_bar_ath import load_bar_ath
 from remontada.scoreboard import mask_ungraded
+from remontada.smart_tagging import load_smart_tagging
 from remontada.stats import possession_summary
 from remontada.submission import sha256, write_csv
 from remontada.vendor import possession_metrics as pm
@@ -24,12 +27,16 @@ def predict(method):
     table = load_bar_ath()
     if method == "baseline":
         return smooth(nearest_team(table), BASELINE_WINDOW), table.graded_runs
+    if method == "hmm":
+        counts = load_counts(pipeline.EVIDENCE_PATH)
+        codes = pipeline.predict(table, counts, pipeline.load_settings(), load_smart_tagging())
+        return codes, table.graded_runs
     raise ValueError("unknown method: {}".format(method))
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--method", default="baseline", choices=["baseline"])
+    parser.add_argument("--method", default="baseline", choices=["baseline", "hmm"])
     parser.add_argument("--out", default="outputs/remontada.csv")
     args = parser.parse_args(argv)
 

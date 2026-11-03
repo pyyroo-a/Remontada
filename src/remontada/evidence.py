@@ -64,14 +64,19 @@ def slow_cells(table):
 
 
 def count(table, labels):
+    return count_cells(team_cells(table), team_cells_mirrored(table), slow_cells(table), labels)
+
+
+def count_cells(team_cell, team_cell_mirrored, slow_cell, labels):
+    """count() from cells worked out already (the tuning reuses them across settings)."""
     team = np.zeros((N_TEAM_CELLS, 2), dtype=np.int64)
     live = (labels == H) | (labels == A)
-    np.add.at(team, (team_cells(table)[live], labels[live]), 1)
-    np.add.at(team, (team_cells_mirrored(table)[live], 1 - labels[live]), 1)
+    np.add.at(team, (team_cell[live], labels[live]), 1)
+    np.add.at(team, (team_cell_mirrored[live], 1 - labels[live]), 1)
 
     slow = np.zeros((N_SLOW_CELLS, 2), dtype=np.int64)
     labelled = labels != X
-    np.add.at(slow, (slow_cells(table)[labelled], (labels[labelled] == D).astype(int)), 1)
+    np.add.at(slow, (slow_cell[labelled], (labels[labelled] == D).astype(int)), 1)
     return Counts(team, slow)
 
 
@@ -93,10 +98,15 @@ def _probabilities(table_counts):
 
 def emission_scores(table, counts, temperature):
     """(n, 3) scores in column order H, A, D. Team clues never push towards or against D."""
+    return scores_from_cells(team_cells(table), slow_cells(table), counts, temperature)
+
+
+def scores_from_cells(team_cell, slow_cell, counts, temperature):
+    """emission_scores() from cells worked out already."""
     p_team, p_slow = _probabilities(counts.team), _probabilities(counts.slow)
-    team = p_team[team_cells(table)]
-    slow = p_slow[slow_cells(table)]
-    scores = np.empty((table.n_frames, 3))
+    team = p_team[team_cell]
+    slow = p_slow[slow_cell]
+    scores = np.empty((len(team_cell), 3))
     scores[:, H] = np.log(team[:, 0]) + np.log(slow[:, 0])
     scores[:, A] = np.log(team[:, 1]) + np.log(slow[:, 0])
     scores[:, D] = np.log(team.mean(axis=1)) + np.log(slow[:, 1])

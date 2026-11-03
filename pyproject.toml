@@ -13,6 +13,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "remontada.vendor" = ["*.csv", "LICENSE-mtah2027", "README.md"]
+"remontada.config" = ["*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
