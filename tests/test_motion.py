@@ -1,6 +1,6 @@
 import numpy as np
 
-from remontada.motion import speed
+from remontada.motion import runs_at_least, speed
 
 
 def test_speed_of_steady_run():
@@ -25,3 +25,9 @@ def test_speed_works_per_slot():
     assert s.shape == (30, 3)
     np.testing.assert_allclose(s[12:-12, 1], 2.5)
     np.testing.assert_allclose(s[12:-12, 0], 0.0)
+
+
+def test_runs_at_least():
+    assert runs_at_least(np.array([1, 1, 0, 1, 1, 1], bool), 3).tolist() == [False, False, False, True, True, True]
+    assert runs_at_least(np.array([1, 1, 1], bool), 3).tolist() == [True, True, True]
+    assert runs_at_least(np.zeros(0, bool), 3).tolist() == []

@@ -24,3 +24,14 @@ def speed(xy, fps, half_window):
     """Size of the velocity, in m/s. Shape of xy without its last axis."""
     v = velocity(xy, fps, half_window)
     return np.hypot(v[..., 0], v[..., 1])
+
+
+def runs_at_least(mask, min_len):
+    """True on every stretch of consecutive True frames that is at least min_len long."""
+    edges = np.diff(np.concatenate(([0], mask.astype(np.int8), [0])))
+    starts, stops = np.flatnonzero(edges == 1), np.flatnonzero(edges == -1)
+    keep = np.zeros(len(mask) + 1, dtype=np.int8)
+    long_enough = stops - starts >= min_len
+    np.add.at(keep, starts[long_enough], 1)
+    np.add.at(keep, stops[long_enough], -1)
+    return np.cumsum(keep)[:-1] > 0
