@@ -1,0 +1,174 @@
+"""The honest practice harness for Plan 3: every number nested, on IDSSE only.
+
+A case is (match, level, hiding style, seed): 7 matches x 4 levels x 2 hiding styles x 2 seeds =
+112 cases. For a setting, every case is scored with a tally learned without its match. For a
+search, every point is scored on every case; then for each match m the point that does best on
+the other six is scored on m (nested_estimate). Ties go to the first point, so reruns agree.
+
+Acceptance rule (spec section 5): a step is kept only if the medium-and-heavy mean rises by at
+least the bar and no level falls by more than GUARD.
+"""
+import json
+from dataclasses import fields
+from pathlib import Path
+
+import numpy as np
+
+from remontada.clues import DEFAULT_CLUES
+from remontada.degrade import HIDING_STYLES, LEVELS, degrade
+from remontada.evidence import Counts
+from remontada.lomo import decode_all
+from remontada.pipeline import features
+from remontada.scoreboard import score
+
+SEEDS = (0, 1)
+LEVEL_NAMES = tuple(LEVELS)
+MEDIUM_HEAVY = ("medium", "heavy")
+BASE_BAR = 0.01  # the smallest rise worth keeping
+SPREAD_LIMIT = 0.005  # a seed spread above this raises the bar to twice the spread
+GUARD = 0.04  # no level may fall by more than this (the organisers' noise band)
+
+
+def all_cases(matches):
+    """Every case for these matches, in a fixed order."""
+    return [(m, lv, h, s) for m in matches for lv in LEVEL_NAMES for h in HIDING_STYLES for s in SEEDS]
+
+
+def case_features(clues=DEFAULT_CLUES, matches=None):
+    """({case: Features}, {match: labels}) for every IDSSE case, degrading one case at a time."""
+    from remontada.load_idsse import MATCH_IDS, load_idsse_cached
+    feats, labels = {}, {}
+    for match_id in matches or MATCH_IDS:
+        table, labels[match_id] = load_idsse_cached(match_id)
+        for case in all_cases([match_id]):
+            _, level, hiding, seed = case
+            feats[case] = features(degrade(table, LEVELS[level], seed, hiding), clues)
+    return feats, labels
+
+
+def left_out_counts(feats, labels):
+    """{match: the tally summed over every case of every other match}."""
+    by_match = {}
+    for case, f in feats.items():
+        c = f.counts(labels[case[0]])
+        by_match[case[0]] = c if case[0] not in by_match else by_match[case[0]] + c
+    total = None
+    for c in by_match.values():
+        total = c if total is None else total + c
+    return {m: Counts(total.team - c.team, total.slow - c.slow) for m, c in by_match.items()}
+
+
+def score_point(feats, labels, settings, counts=None):
+    """{case: (spellF1, macroF1)}, each case decoded with a tally that never saw its match.
+
+    Decoded in batches of one hiding style and seed at a time, to keep memory bounded. Pass
+    counts (from left_out_counts) to reuse them across settings with the same features.
+    """
+    counts = counts if counts is not None else left_out_counts(feats, labels)
+    out = {}
+    for hiding in HIDING_STYLES:
+        for seed in SEEDS:
+            batch = {case: f for case, f in feats.items() if case[2] == hiding and case[3] == seed}
+            if not batch:
+                continue
+            codes = decode_all(batch, counts, settings)
+            for case in batch:
+                s = score(labels[case[0]], codes[case])
+                out[case] = (float(s["spell_f1"]), float(s["macro_f1"]))
+    return {case: out[case] for case in feats}
+
+
+def _mean(case_scores, keep, index=0):
+    values = [v[index] for case, v in case_scores.items() if keep(case)]
+    return float(np.mean(values))
+
+
+def level_means(case_scores, matches=None, index=0):
+    """{level: mean spellF1 (index 0) or macroF1 (index 1)} over the given matches, both hiding
+    styles and both seeds."""
+    chosen = set(matches) if matches is not None else {case[0] for case in case_scores}
+    return {lv: _mean(case_scores, lambda c, lv=lv: c[1] == lv and c[0] in chosen, index)
+            for lv in LEVEL_NAMES}
+
+
+def objective(case_scores, matches=None):
+    """The number every step is judged on: mean spellF1 over medium and heavy."""
+    levels = level_means(case_scores, matches)
+    return float(np.mean([levels[lv] for lv in MEDIUM_HEAVY]))
+
+
+def nested_estimate(results, index=0):
+    """({level: held-out mean}, {match: chosen point}) from {point: {case: scores}}.
+
+    For each match m, the point with the best objective on the other matches is scored on m;
+    the first point in insertion order wins a tie.
+    """
+    points = list(results)
+    matches = sorted({case[0] for case in results[points[0]]})
+    chosen, per_match = {}, []
+    for m in matches:
+        others = [x for x in matches if x != m]
+        best, best_value = points[0], objective(results[points[0]], others)
+        for point in points[1:]:
+            value = objective(results[point], others)
+            if value > best_value:
+                best, best_value = point, value
+        chosen[m] = best
+        per_match.append(level_means(results[best], [m], index))
+    return {lv: float(np.mean([pm[lv] for pm in per_match])) for lv in LEVEL_NAMES}, chosen
+
+
+def accepts(candidate, current, bar):
+    """The acceptance rule on two {level: nested mean} tables."""
+    rise = np.mean([candidate[lv] for lv in MEDIUM_HEAVY]) - np.mean([current[lv] for lv in MEDIUM_HEAVY])
+    guard = all(candidate[lv] >= current[lv] - GUARD for lv in LEVEL_NAMES)
+    return bool(rise >= bar - 1e-12 and guard)
+
+
+def seed_spread(case_scores):
+    """|medium-and-heavy mean on seed 0 minus the same on seed 1|."""
+    def on_seed(seed):
+        return float(np.mean([_mean(case_scores, lambda c, lv=lv: c[1] == lv and c[3] == seed)
+                              for lv in MEDIUM_HEAVY]))
+    return abs(on_seed(SEEDS[0]) - on_seed(SEEDS[1]))
+
+
+def accept_bar(spread):
+    """BASE_BAR, or twice the seed spread when that spread is over SPREAD_LIMIT (spec section 5)."""
+    return 2 * spread if spread > SPREAD_LIMIT else BASE_BAR
+
+
+def point_name(settings):
+    """A readable name for a search point: the costs, plus anything that differs from Plan 2."""
+    c = settings.costs
+    parts = ["switch={:g} to_dead={:g} from_dead={:g}".format(c.switch, c.to_dead, c.from_dead)]
+    for f in fields(DEFAULT_CLUES):
+        value = getattr(settings.clues, f.name)
+        if value != f.default:
+            parts.append("{}={:g}".format(f.name, value))
+    if settings.touch_discount or settings.touch_window:
+        parts.append("touch_discount={:g} touch_window={:d}".format(settings.touch_discount, settings.touch_window))
+    if settings.scorer != "tally":
+        parts.append("scorer=" + settings.scorer)
+    return " ".join(parts)
+
+
+def _case_key(case):
+    return "|".join(str(part) for part in case)
+
+
+def _case_from_key(key):
+    match, level, hiding, seed = key.split("|")
+    return match, level, hiding, int(seed)
+
+
+def save_results(path, results):
+    """{point: {case: (spellF1, macroF1)}} as JSON, cases written as "match|level|hiding|seed"."""
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    data = {point: {_case_key(c): list(v) for c, v in cases.items()} for point, cases in results.items()}
+    Path(path).write_text(json.dumps(data, indent=1), encoding="utf-8")
+
+
+def load_results(path):
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    return {point: {_case_from_key(k): tuple(v) for k, v in cases.items()} for point, cases in data.items()}
