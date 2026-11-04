@@ -6,7 +6,7 @@ from conftest import NAN_XY, synthetic_table
 from remontada.evidence import count
 from remontada.hmm import Costs
 from remontada.lomo import leave_one_out_counts
-from remontada.pipeline import Settings, features, load_settings, predict
+from remontada.pipeline import CONFIG_DIR, Settings, features, load_settings, predict
 from remontada.evidence import N_SLOW_CELLS, NONE, Counts
 from remontada.touch import touches
 from remontada.vendor.possession_metrics import A, D, H
@@ -108,3 +108,46 @@ def test_a_pass_flying_1m_from_an_opponent_stays_home():
     labels = np.array([H] * len(ball), dtype=np.int8)
     codes = predict(table, count(table, labels), Settings(0.4, Costs(4, 32, 32), True, False))
     assert (codes[10:51] == H).all()
+
+
+def test_hmm_v1_still_loads_with_defaults():
+    from remontada.clues import DEFAULT_CLUES
+    s = load_settings(CONFIG_DIR / "hmm_v1.json")
+    assert s.clues == DEFAULT_CLUES and s.touch_discount == 0.0 and s.touch_window == 0
+    assert s.scorer == "tally"
+
+
+def test_settings_round_trip_with_clues(tmp_path):
+    import json
+    path = tmp_path / "hmm.json"
+    path.write_text(json.dumps({"temperature": 1, "switch": 10, "to_dead": 80, "from_dead": 40,
+                                "ball_hints": True, "tag_hints": False, "touch_discount": 0.5,
+                                "touch_window": 12, "scorer": "model",
+                                "clues": {"carry_frames": 50, "touch_radius": 2.0}}), encoding="utf-8")
+    s = load_settings(path)
+    assert s.clues.carry_frames == 50 and s.clues.touch_radius == 2.0 and s.clues.touch_dv == 3.0
+    assert (s.touch_discount, s.touch_window, s.scorer) == (0.5, 12, "model")
+    assert s.costs == Costs(10.0, 80.0, 40.0)
+
+
+def test_predict_uses_the_settings_clues():
+    from remontada.clues import DEFAULT_CLUES
+    from remontada.hmm import decode_runs
+    table, labels = _two_halves_of_possession()
+    counts = count(table, labels)
+    clues = replace(DEFAULT_CLUES, control_radius=0.1)
+    settings = Settings(0.2, Costs(8, 8, 8), True, False, clues=clues)
+    assert not np.array_equal(features(table, clues).team, features(table).team)
+    expected = decode_runs(features(table, clues).scores(counts, settings), table.graded_runs, settings.costs)
+    np.testing.assert_array_equal(predict(table, counts, settings), expected)
+
+
+def test_a_misspelt_clue_setting_is_refused(tmp_path):
+    import json
+    import pytest
+    path = tmp_path / "hmm.json"
+    path.write_text(json.dumps({"temperature": 1, "switch": 10, "to_dead": 80, "from_dead": 80,
+                                "ball_hints": True, "tag_hints": False,
+                                "clues": {"cary_frames": 50}}), encoding="utf-8")
+    with pytest.raises(ValueError, match="cary_frames"):
+        load_settings(path)

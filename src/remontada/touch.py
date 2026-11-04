@@ -37,7 +37,7 @@ def _nearest_team(home, away):
     return np.where(home <= away, 0, 1).astype(np.int8)
 
 
-def touches(table):
+def touches(table, dv=TOUCH_DV, radius=TOUCH_RADIUS):
     """Team code on frames where the ball's velocity jumps next to a player, -1 elsewhere.
 
     The jump is |v_after - v_before| over K frames each side. Only jumps next to a player can be
@@ -50,7 +50,7 @@ def touches(table):
         return out
     home, away = nearest_by_team(table)
     with np.errstate(invalid="ignore"):
-        near = np.fmin(home, away) <= TOUCH_RADIUS
+        near = np.fmin(home, away) <= radius
 
     b = table.ball_xy
     v_before = (b[k:-k] - b[:-2 * k]) * table.fps / k
@@ -63,20 +63,20 @@ def touches(table):
     window = sliding_window_view(padded, 2 * k + 1)  # window[t] covers t-k..t+k
     peak = (jump >= window.max(axis=1)) & (jump > window[:, :k].max(axis=1))
 
-    hit = peak & (jump >= TOUCH_DV)
+    hit = peak & (jump >= dv)
     out[hit] = _nearest_team(home, away)[hit]
     return out
 
 
-def control(table):
-    """Team code on frames inside a run of at least CONTROL_MIN_FRAMES where that team's nearest
-    player is within CONTROL_RADIUS and nearer than the other team's; -1 elsewhere."""
+def control(table, radius=CONTROL_RADIUS, min_frames=CONTROL_MIN_FRAMES):
+    """Team code on frames inside a run of at least min_frames where that team's nearest player
+    is within radius and nearer than the other team's; -1 elsewhere."""
     home, away = nearest_by_team(table)
     out = np.full(table.n_frames, -1, dtype=np.int8)
     with np.errstate(invalid="ignore"):
-        owners = ((home <= CONTROL_RADIUS) & (home < away), (away <= CONTROL_RADIUS) & (away < home))
+        owners = ((home <= radius) & (home < away), (away <= radius) & (away < home))
     for team, owner in enumerate(owners):
-        out[runs_at_least(owner, CONTROL_MIN_FRAMES)] = team
+        out[runs_at_least(owner, min_frames)] = team
     return out
 
 
