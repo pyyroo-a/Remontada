@@ -8,8 +8,9 @@ from pathlib import Path
 
 import numpy as np
 
-from remontada.evidence import (count_cells, hint_weight, scores_from_cells, slow_cells,
-                                team_cells, team_cells_mirrored)
+from remontada.evidence import (N_SLOW_CELLS, NONE, count_cells, hint_weight, scores_from_cells,
+                                slow_cells, team_cells, team_cells_mirrored)
+from remontada.frames import run_slice
 from remontada.hints import ball_hints, tag_hints
 from remontada.hmm import Costs, decode_runs
 from remontada.vendor.possession_metrics import D
@@ -61,14 +62,29 @@ class Features:
         return scores
 
 
+NOTHING_KNOWN_TEAM_CELL = NONE * 3 + NONE  # nearness unseen (bin 0), no touch, no control
+
+
 def features(table):
-    return Features(
-        team=team_cells(table),
-        team_mirrored=team_cells_mirrored(table),
-        slow=slow_cells(table),
-        ball_clues=ball_hints(table, 1.0)[:, D].astype(np.int8),
-        graded_runs=list(table.graded_runs),
-    )
+    """Clues worked out on each graded run on its own, so nothing crosses the half-time gap.
+
+    Frames outside every run get the "nothing known" cells: unseen nearness, no touch, no
+    control, unknown speed and no ball clues.
+    """
+    n = table.n_frames
+    team = np.full(n, NOTHING_KNOWN_TEAM_CELL, dtype=np.int16)
+    team_mirrored = team.copy()
+    slow = np.full(n, N_SLOW_CELLS - 1, dtype=np.int16)
+    ball_clues = np.zeros(n, dtype=np.int8)
+    for start, stop in table.graded_runs:
+        if stop <= start:
+            continue
+        part = run_slice(table, start, stop)
+        team[start:stop] = team_cells(part)
+        team_mirrored[start:stop] = team_cells_mirrored(part)
+        slow[start:stop] = slow_cells(part)
+        ball_clues[start:stop] = ball_hints(part, 1.0)[:, D]
+    return Features(team, team_mirrored, slow, ball_clues, list(table.graded_runs))
 
 
 def predict(table, counts, settings, tags=None):

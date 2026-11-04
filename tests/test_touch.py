@@ -26,6 +26,16 @@ def test_bounce_off_a_home_player_is_a_home_touch():
     assert len(hits) == 1 and hits[0] in (19, 20, 21) and t[hits[0]] == 0
 
 
+def test_a_far_glitch_does_not_hide_a_real_touch():
+    # real bounce off a home player at frame 20; a 3 m spike at frame 22 with no player near makes
+    # a bigger jump inside the same window
+    ball = [(-0.4 * abs(t - 20), 0.0) for t in range(41)]
+    ball[22] = (ball[22][0], 3.0)
+    players = [[(0.0, 0.5), (8.0, 0.0)]] * 41
+    t = touches(synthetic_table(ball, players, teams=[0, 1]))
+    assert t[20] == 0 and t[22] == -1
+
+
 def test_straight_ball_has_no_touch():
     ball = [(-8.0 + 0.4 * t, 0.0) for t in range(41)]
     players = [[(0.0, 0.5), (8.0, 0.0)]] * 41

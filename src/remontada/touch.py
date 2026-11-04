@@ -40,27 +40,30 @@ def _nearest_team(home, away):
 def touches(table):
     """Team code on frames where the ball's velocity jumps next to a player, -1 elsewhere.
 
-    The jump is |v_after - v_before| over K frames each side; only the largest jump within K
-    frames counts (the first one on a tie).
+    The jump is |v_after - v_before| over K frames each side. Only jumps next to a player can be
+    touches, and of those only the largest within K frames counts (the first one on a tie), so a
+    bigger glitch far from everyone cannot hide a real touch (plan 2 review).
     """
     k, n = BALL_HALF_WINDOW, table.n_frames
     out = np.full(n, -1, dtype=np.int8)
     if n <= 2 * k:
         return out
+    home, away = nearest_by_team(table)
+    with np.errstate(invalid="ignore"):
+        near = np.fmin(home, away) <= TOUCH_RADIUS
+
     b = table.ball_xy
     v_before = (b[k:-k] - b[:-2 * k]) * table.fps / k
     v_after = (b[2 * k:] - b[k:-k]) * table.fps / k
     jump = np.full(n, -np.inf)
     jump[k:-k] = np.nan_to_num(np.hypot(*(v_after - v_before).T), nan=-np.inf)
+    jump[~near] = -np.inf
 
     padded = np.concatenate((np.full(k, -np.inf), jump, np.full(k, -np.inf)))
     window = sliding_window_view(padded, 2 * k + 1)  # window[t] covers t-k..t+k
     peak = (jump >= window.max(axis=1)) & (jump > window[:, :k].max(axis=1))
 
-    home, away = nearest_by_team(table)
-    with np.errstate(invalid="ignore"):
-        near = np.fmin(home, away) <= TOUCH_RADIUS
-    hit = peak & (jump >= TOUCH_DV) & near
+    hit = peak & (jump >= TOUCH_DV)
     out[hit] = _nearest_team(home, away)[hit]
     return out
 
