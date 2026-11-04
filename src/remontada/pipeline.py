@@ -42,9 +42,28 @@ def _clue_settings(saved):
     return ClueSettings(**{name: kinds[name](value) for name, value in saved.items()})
 
 
+def settings_to_dict(settings):
+    """The saved form of Settings (the layout of hmm_v1.json, plus the Plan 3 keys)."""
+    return {
+        "temperature": settings.temperature,
+        "switch": settings.costs.switch,
+        "to_dead": settings.costs.to_dead,
+        "from_dead": settings.costs.from_dead,
+        "ball_hints": settings.ball_hints,
+        "tag_hints": settings.tag_hints,
+        "clues": {f.name: getattr(settings.clues, f.name) for f in fields(ClueSettings)},
+        "touch_discount": settings.touch_discount,
+        "touch_window": settings.touch_window,
+        "scorer": settings.scorer,
+    }
+
+
 def load_settings(path=None):
     """Settings from a JSON file; the Plan 3 keys are optional, so hmm_v1.json loads unchanged."""
-    saved = json.loads(Path(path or SETTINGS_PATH).read_text(encoding="utf-8"))
+    return settings_from_dict(json.loads(Path(path or SETTINGS_PATH).read_text(encoding="utf-8")))
+
+
+def settings_from_dict(saved):
     return Settings(
         temperature=float(saved["temperature"]),
         costs=Costs(float(saved["switch"]), float(saved["to_dead"]), float(saved["from_dead"])),

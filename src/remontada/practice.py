@@ -9,7 +9,7 @@ Acceptance rule (spec section 5): a step is kept only if the medium-and-heavy me
 least the bar and no level falls by more than GUARD.
 """
 import json
-from dataclasses import fields
+from dataclasses import fields, replace
 from pathlib import Path
 
 import numpy as np
@@ -17,8 +17,9 @@ import numpy as np
 from remontada.clues import DEFAULT_CLUES
 from remontada.degrade import HIDING_STYLES, LEVELS, degrade
 from remontada.evidence import Counts
+from remontada.hmm import Costs
 from remontada.lomo import decode_all
-from remontada.pipeline import features
+from remontada.pipeline import Settings, features
 from remontada.scoreboard import score
 
 SEEDS = (0, 1)
@@ -36,14 +37,24 @@ def all_cases(matches):
 
 def case_features(clues=DEFAULT_CLUES, matches=None):
     """({case: Features}, {match: labels}) for every IDSSE case, degrading one case at a time."""
+    by_clues, labels = case_features_many([clues], matches)
+    return by_clues[clues], labels
+
+
+def case_features_many(clue_list, matches=None):
+    """({clues: {case: Features}}, {match: labels}): each case is degraded once and its features
+    worked out for every clue setting in the list."""
     from remontada.load_idsse import MATCH_IDS, load_idsse_cached
-    feats, labels = {}, {}
+    clue_list = list(dict.fromkeys(clue_list))
+    by_clues, labels = {clues: {} for clues in clue_list}, {}
     for match_id in matches or MATCH_IDS:
         table, labels[match_id] = load_idsse_cached(match_id)
         for case in all_cases([match_id]):
             _, level, hiding, seed = case
-            feats[case] = features(degrade(table, LEVELS[level], seed, hiding), clues)
-    return feats, labels
+            messy = degrade(table, LEVELS[level], seed, hiding)
+            for clues in clue_list:
+                by_clues[clues][case] = features(messy, clues)
+    return by_clues, labels
 
 
 def left_out_counts(feats, labels):
@@ -142,6 +153,10 @@ def point_name(settings):
     """A readable name for a search point: the costs, plus anything that differs from Plan 2."""
     c = settings.costs
     parts = ["switch={:g} to_dead={:g} from_dead={:g}".format(c.switch, c.to_dead, c.from_dead)]
+    if settings.temperature != 1.0:
+        parts.append("temperature={:g}".format(settings.temperature))
+    if not settings.ball_hints:
+        parts.append("no_ball_hints")
     for f in fields(DEFAULT_CLUES):
         value = getattr(settings.clues, f.name)
         if value != f.default:
@@ -172,3 +187,80 @@ def save_results(path, results):
 def load_results(path):
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     return {point: {_case_from_key(k): tuple(v) for k, v in cases.items()} for point, cases in data.items()}
+
+
+# Plan 3 step A: the search grids, fixed before any score was seen (plan Task 5).
+SWITCH_GRID = (2.5, 5, 10, 20, 40)
+DEAD_GRID = (20, 40, 80, 160, 320)  # to_dead and from_dead searched separately
+CLUE_STEPS = (
+    ("touch_dv", [2.0, 3.0, 4.5]),
+    ("touch_radius", [1.0, 1.5, 2.0]),
+    ("control_radius", [1.0, 1.5, 2.0]),
+    ("control_min_frames", [5, 10, 20]),
+    ("carry_frames", [25, 50, 75, 125]),
+    ("out_margin_m", [0.5, 1.0, 1.5]),
+)
+ALL = "all"  # the context that sees every match: its choice is the one we ship
+
+
+def cost_grid(clues=DEFAULT_CLUES):
+    """125 points at temperature 1 (only cost / temperature ratios matter), grid order fixed."""
+    return [Settings(1.0, Costs(float(sw), float(td), float(fd)), True, False, clues=clues)
+            for sw in SWITCH_GRID for td in DEAD_GRID for fd in DEAD_GRID]
+
+
+def clue_steps():
+    """The coordinate search over the clue settings, in order: (name, values)."""
+    return [(name, list(values)) for name, values in CLUE_STEPS]
+
+
+def context_matches(context, matches):
+    """The matches a context may look at: every match for ALL, the other six for a match."""
+    return list(matches) if context == ALL else [m for m in matches if m != context]
+
+
+def choose(results, names, matches):
+    """The point among names with the best objective on these matches; the first one on a tie."""
+    best, best_value = names[0], objective(results[names[0]], matches)
+    for name in names[1:]:
+        value = objective(results[name], matches)
+        if value > best_value:
+            best, best_value = name, value
+    return best
+
+
+def nested_step(results, candidates):
+    """({level: nested mean}, {context: chosen point}) when each context has its own candidates.
+
+    candidates is {context: [point names]}, contexts being every match plus ALL. Context m chooses
+    on the other matches and is scored on m; ALL's choice is what we would ship.
+    """
+    matches = sorted(c for c in candidates if c != ALL)
+    chosen = {c: choose(results, names, context_matches(c, matches)) for c, names in candidates.items()}
+    per_match = [level_means(results[chosen[m]], [m]) for m in matches]
+    return {lv: float(np.mean([pm[lv] for pm in per_match])) for lv in LEVEL_NAMES}, chosen
+
+
+def coordinate_search(contexts, steps, score_many, results=None):
+    """Try each clue value in turn, every context on its own path (so the estimate stays nested).
+
+    contexts is {context: starting Settings}; steps is [(clue name, values)]; score_many(list of
+    Settings) returns {point name: case scores} and is only asked for points not scored yet.
+    Returns ({context: final Settings}, {point name: case scores}).
+    """
+    results = dict(results or {})
+    matches = sorted(c for c in contexts if c != ALL)
+    current = dict(contexts)
+    for name, values in steps:
+        options = {c: [replace(s, clues=replace(s.clues, **{name: v})) for v in values] for c, s in current.items()}
+        needed = {}
+        for settings_list in options.values():
+            for s in settings_list:
+                if point_name(s) not in results:
+                    needed.setdefault(point_name(s), s)
+        if needed:
+            results.update(score_many(list(needed.values())))
+        for c, settings_list in options.items():
+            best = choose(results, [point_name(s) for s in settings_list], context_matches(c, matches))
+            current[c] = next(s for s in settings_list if point_name(s) == best)
+    return current, results
