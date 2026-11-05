@@ -377,6 +377,195 @@
     "J03WR9": "switch=20 to_dead=20 from_dead=80 touch_dv=4.5 control_radius=2 control_min_frames=5 out_margin_m=0.5",
     "all": "switch=20 to_dead=20 from_dead=80 touch_dv=4.5 control_radius=2 control_min_frames=5 out_margin_m=0.5"
    }
+  },
+  "B-gaps": {
+   "verdict": "DROP",
+   "against": "A-clues",
+   "bar": 0.01,
+   "levels": {
+    "none": 0.6420140739344762,
+    "light": 0.5873698640234356,
+    "medium": 0.4696581891651864,
+    "heavy": 0.2921707321532228
+   },
+   "against_levels": {
+    "none": 0.645192392580001,
+    "light": 0.5845269224146824,
+    "medium": 0.4599739832588555,
+    "heavy": 0.28677251570907075
+   },
+   "contexts": {
+    "J03WMX": {
+     "temperature": 1.0,
+     "switch": 20.0,
+     "to_dead": 20.0,
+     "from_dead": 80.0,
+     "ball_hints": true,
+     "tag_hints": false,
+     "clues": {
+      "touch_dv": 4.5,
+      "touch_radius": 1.5,
+      "control_radius": 2.0,
+      "control_min_frames": 5,
+      "carry_frames": 75,
+      "out_margin_m": 0.5,
+      "gap_fill_frames": 75
+     },
+     "touch_discount": 0.0,
+     "touch_window": 0,
+     "scorer": "tally"
+    },
+    "J03WN1": {
+     "temperature": 1.0,
+     "switch": 20.0,
+     "to_dead": 20.0,
+     "from_dead": 80.0,
+     "ball_hints": true,
+     "tag_hints": false,
+     "clues": {
+      "touch_dv": 4.5,
+      "touch_radius": 1.5,
+      "control_radius": 2.0,
+      "control_min_frames": 5,
+      "carry_frames": 75,
+      "out_margin_m": 0.5,
+      "gap_fill_frames": 75
+     },
+     "touch_discount": 0.0,
+     "touch_window": 0,
+     "scorer": "tally"
+    },
+    "J03WOH": {
+     "temperature": 1.0,
+     "switch": 20.0,
+     "to_dead": 20.0,
+     "from_dead": 80.0,
+     "ball_hints": true,
+     "tag_hints": false,
+     "clues": {
+      "touch_dv": 4.5,
+      "touch_radius": 1.5,
+      "control_radius": 1.0,
+      "control_min_frames": 10,
+      "carry_frames": 75,
+      "out_margin_m": 0.5,
+      "gap_fill_frames": 75
+     },
+     "touch_discount": 0.0,
+     "touch_window": 0,
+     "scorer": "tally"
+    },
+    "J03WOY": {
+     "temperature": 1.0,
+     "switch": 20.0,
+     "to_dead": 20.0,
+     "from_dead": 80.0,
+     "ball_hints": true,
+     "tag_hints": false,
+     "clues": {
+      "touch_dv": 4.5,
+      "touch_radius": 1.5,
+      "control_radius": 2.0,
+      "control_min_frames": 5,
+      "carry_frames": 75,
+      "out_margin_m": 0.5,
+      "gap_fill_frames": 75
+     },
+     "touch_discount": 0.0,
+     "touch_window": 0,
+     "scorer": "tally"
+    },
+    "J03WPY": {
+     "temperature": 1.0,
+     "switch": 20.0,
+     "to_dead": 20.0,
+     "from_dead": 80.0,
+     "ball_hints": true,
+     "tag_hints": false,
+     "clues": {
+      "touch_dv": 4.5,
+      "touch_radius": 1.5,
+      "control_radius": 2.0,
+      "control_min_frames": 5,
+      "carry_frames": 75,
+      "out_margin_m": 0.5,
+      "gap_fill_frames": 75
+     },
+     "touch_discount": 0.0,
+     "touch_window": 0,
+     "scorer": "tally"
+    },
+    "J03WQQ": {
+     "temperature": 1.0,
+     "switch": 20.0,
+     "to_dead": 20.0,
+     "from_dead": 80.0,
+     "ball_hints": true,
+     "tag_hints": false,
+     "clues": {
+      "touch_dv": 4.5,
+      "touch_radius": 1.5,
+      "control_radius": 2.0,
+      "control_min_frames": 5,
+      "carry_frames": 75,
+      "out_margin_m": 0.5,
+      "gap_fill_frames": 75
+     },
+     "touch_discount": 0.0,
+     "touch_window": 0,
+     "scorer": "tally"
+    },
+    "J03WR9": {
+     "temperature": 1.0,
+     "switch": 20.0,
+     "to_dead": 20.0,
+     "from_dead": 80.0,
+     "ball_hints": true,
+     "tag_hints": false,
+     "clues": {
+      "touch_dv": 4.5,
+      "touch_radius": 1.5,
+      "control_radius": 2.0,
+      "control_min_frames": 5,
+      "carry_frames": 75,
+      "out_margin_m": 0.5,
+      "gap_fill_frames": 75
+     },
+     "touch_discount": 0.0,
+     "touch_window": 0,
+     "scorer": "tally"
+    },
+    "all": {
+     "temperature": 1.0,
+     "switch": 20.0,
+     "to_dead": 20.0,
+     "from_dead": 80.0,
+     "ball_hints": true,
+     "tag_hints": false,
+     "clues": {
+      "touch_dv": 4.5,
+      "touch_radius": 1.5,
+      "control_radius": 2.0,
+      "control_min_frames": 5,
+      "carry_frames": 75,
+      "out_margin_m": 0.5,
+      "gap_fill_frames": 75
+     },
+     "touch_discount": 0.0,
+     "touch_window": 0,
+     "scorer": "tally"
+    }
+   },
+   "chosen": {
+    "J03WMX": "switch=20 to_dead=20 from_dead=80 touch_dv=4.5 control_radius=2 control_min_frames=5 out_margin_m=0.5 gap_fill_frames=75",
+    "J03WN1": "switch=20 to_dead=20 from_dead=80 touch_dv=4.5 control_radius=2 control_min_frames=5 out_margin_m=0.5 gap_fill_frames=75",
+    "J03WOH": "switch=20 to_dead=20 from_dead=80 touch_dv=4.5 control_radius=1 out_margin_m=0.5 gap_fill_frames=75",
+    "J03WOY": "switch=20 to_dead=20 from_dead=80 touch_dv=4.5 control_radius=2 control_min_frames=5 out_margin_m=0.5 gap_fill_frames=75",
+    "J03WPY": "switch=20 to_dead=20 from_dead=80 touch_dv=4.5 control_radius=2 control_min_frames=5 out_margin_m=0.5 gap_fill_frames=75",
+    "J03WQQ": "switch=20 to_dead=20 from_dead=80 touch_dv=4.5 control_radius=2 control_min_frames=5 out_margin_m=0.5 gap_fill_frames=75",
+    "J03WR9": "switch=20 to_dead=20 from_dead=80 touch_dv=4.5 control_radius=2 control_min_frames=5 out_margin_m=0.5 gap_fill_frames=75",
+    "all": "switch=20 to_dead=20 from_dead=80 touch_dv=4.5 control_radius=2 control_min_frames=5 out_margin_m=0.5 gap_fill_frames=75"
+   }
   }
  }
 }

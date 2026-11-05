@@ -3,7 +3,7 @@
     codes = predict(table, load_counts(EVIDENCE_PATH), load_settings(), tags)
 """
 import json
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +12,7 @@ from remontada.clues import DEFAULT_CLUES, ClueSettings
 from remontada.evidence import (N_SLOW_CELLS, NONE, count_cells, hint_weight, scores_from_cells,
                                 slow_cells, team_cells, team_cells_mirrored)
 from remontada.frames import run_slice
+from remontada.gaps import fill_ball_gaps
 from remontada.hints import ball_hints, tag_hints
 from remontada.hmm import Costs, decode_runs
 from remontada.vendor.possession_metrics import D
@@ -107,7 +108,8 @@ def features(table, clues=DEFAULT_CLUES):
     """Clues worked out on each graded run on its own, so nothing crosses the half-time gap.
 
     Frames outside every run get the "nothing known" cells: unseen nearness, no touch, no
-    control, unknown speed and no ball clues.
+    control, unknown speed and no ball clues. With clues.gap_fill_frames > 0, short ball gaps in
+    each run are filled by a straight line first (gaps.py); filled frames are never touches.
     """
     n = table.n_frames
     team = np.full(n, NOTHING_KNOWN_TEAM_CELL, dtype=np.int16)
@@ -118,8 +120,12 @@ def features(table, clues=DEFAULT_CLUES):
         if stop <= start:
             continue
         part = run_slice(table, start, stop)
-        team[start:stop] = team_cells(part, clues)
-        team_mirrored[start:stop] = team_cells_mirrored(part, clues)
+        filled = None
+        if clues.gap_fill_frames > 0:
+            ball_xy, filled = fill_ball_gaps(part.ball_xy, part.graded_runs, clues.gap_fill_frames)
+            part = replace(part, ball_xy=ball_xy)
+        team[start:stop] = team_cells(part, clues, filled)
+        team_mirrored[start:stop] = team_cells_mirrored(part, clues, filled)
         slow[start:stop] = slow_cells(part)
         ball_clues[start:stop] = ball_hints(part, 1.0, clues.out_margin_m)[:, D]
     return Features(team, team_mirrored, slow, ball_clues, list(table.graded_runs))

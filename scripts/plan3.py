@@ -3,6 +3,7 @@
     python scripts/plan3.py start          # baseline and Plan 2 on degrade v3: the numbers to beat
     python scripts/plan3.py search-costs   # step A, part 1: 125 cost points
     python scripts/plan3.py search-clues   # step A, part 2: coordinate search over the clues
+    python scripts/plan3.py search-gaps    # step B: fill short ball gaps, 0 to 3 s
 
 Each step is judged by the acceptance rule against the best version so far and recorded as KEEP
 or DROP in results/plan3/state.json. Every match keeps its own path through the steps (chosen on
@@ -15,6 +16,7 @@ import argparse
 import json
 import sys
 import time
+from dataclasses import replace
 from pathlib import Path
 
 from remontada import practice
@@ -201,9 +203,33 @@ def search_clues(args):
     record_step(args.results_dir, "A-clues", levels, final, label, levels_now, bar)
 
 
+# ---------------------------------------------------------------- step B
+
+
+def search_gaps(args):
+    """Each path tries every gap length from its own best settings so far. Points already scored
+    in the clue search (no filling) are reused, not scored again."""
+    label, contexts, levels_now, bar = current_best(args.results_dir, "B-gaps")
+    earlier = args.results_dir / "search-clues.json"
+    cached = practice.load_results(earlier) if earlier.is_file() and args.limit is None else {}
+    scorer = Scorer(args.matches)
+
+    def score_many(settings_list):
+        out = scorer.score_many(settings_list)
+        scorer.forget_except(set())
+        return out
+
+    final, results = practice.coordinate_search(contexts, practice.gap_steps(), score_many, cached)
+    tried = {practice.point_name(replace(s, clues=replace(s.clues, gap_fill_frames=g)))
+             for s in contexts.values() for g in practice.GAP_GRID}
+    practice.save_results(args.results_dir / "search-gaps.json", {n: results[n] for n in results if n in tried})
+    levels, _ = practice.nested_step(results, {c: [practice.point_name(s)] for c, s in final.items()})
+    record_step(args.results_dir, "B-gaps", levels, final, label, levels_now, bar)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("command", choices=["start", "search-costs", "search-clues"])
+    parser.add_argument("command", choices=["start", "search-costs", "search-clues", "search-gaps"])
     parser.add_argument("--results-dir", type=Path, default=RESULTS_DIR)
     parser.add_argument("--matches", default=",".join(MATCH_IDS), help="for quick checks only")
     parser.add_argument("--limit", type=int, default=None, help="first N points or steps, for quick checks only")
@@ -211,7 +237,8 @@ def main(argv=None):
     args.matches = args.matches.split(",")
     args.results_dir.mkdir(parents=True, exist_ok=True)
     log("plan3 {} on {} matches".format(args.command, len(args.matches)))
-    {"start": start, "search-costs": search_costs, "search-clues": search_clues}[args.command](args)
+    {"start": start, "search-costs": search_costs, "search-clues": search_clues,
+     "search-gaps": search_gaps}[args.command](args)
     return 0
 
 

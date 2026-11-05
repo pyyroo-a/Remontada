@@ -202,6 +202,9 @@ CLUE_STEPS = (
 )
 ALL = "all"  # the context that sees every match: its choice is the one we ship
 
+# Plan 3 step B: longest ball gap filled by a straight line, in frames (0, 0.5, 1, 2, 3 s; plan Task 6).
+GAP_GRID = (0, 12, 25, 50, 75)
+
 
 def cost_grid(clues=DEFAULT_CLUES):
     """125 points at temperature 1 (only cost / temperature ratios matter), grid order fixed."""
@@ -212,6 +215,11 @@ def cost_grid(clues=DEFAULT_CLUES):
 def clue_steps():
     """The coordinate search over the clue settings, in order: (name, values)."""
     return [(name, list(values)) for name, values in CLUE_STEPS]
+
+
+def gap_steps():
+    """Step B as a one-step coordinate search over gap_fill_frames."""
+    return [("gap_fill_frames", list(GAP_GRID))]
 
 
 def context_matches(context, matches):

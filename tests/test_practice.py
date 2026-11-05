@@ -226,3 +226,9 @@ def test_point_names_tell_temperatures_and_hints_apart():
     p = _practice()
     name = p.point_name(Settings(0.4, Costs(4, 32, 32), False, False))
     assert name == "switch=4 to_dead=32 from_dead=32 temperature=0.4 no_ball_hints"
+
+
+def test_gap_grid_is_fixed_and_starts_with_no_filling():
+    p = _practice()
+    assert p.GAP_GRID == (0, 12, 25, 50, 75)
+    assert p.gap_steps() == [("gap_fill_frames", [0, 12, 25, 50, 75])]

@@ -34,12 +34,12 @@ class Counts:
         return Counts(self.team + other.team, self.slow + other.slow)
 
 
-def _team_parts(table, clues):
+def _team_parts(table, clues, ignore=None):
     home, away = nearest_by_team(table)
     with np.errstate(invalid="ignore"):
         margin = away - home  # NaN when the ball is unseen or neither team is visible
     near = np.where(np.isnan(margin), 0, 1 + np.digitize(margin, NEAR_EDGES))
-    last_touch = carry_forward(touches(table, clues.touch_dv, clues.touch_radius), clues.carry_frames)
+    last_touch = carry_forward(touches(table, clues.touch_dv, clues.touch_radius, ignore), clues.carry_frames)
     owner = control(table, clues.control_radius, clues.control_min_frames)
     return near, np.where(last_touch < 0, NONE, last_touch), np.where(owner < 0, NONE, owner)
 
@@ -48,13 +48,14 @@ def _cells(near, last_touch, owner):
     return (near * 9 + last_touch * 3 + owner).astype(np.int16)
 
 
-def team_cells(table, clues=DEFAULT_CLUES):
-    return _cells(*_team_parts(table, clues))
+def team_cells(table, clues=DEFAULT_CLUES, ignore=None):
+    """ignore: frames whose ball position is filled, not measured (never a touch)."""
+    return _cells(*_team_parts(table, clues, ignore))
 
 
-def team_cells_mirrored(table, clues=DEFAULT_CLUES):
+def team_cells_mirrored(table, clues=DEFAULT_CLUES, ignore=None):
     """The cells the same frames would have with home and away swapped."""
-    near, last_touch, owner = _team_parts(table, clues)
+    near, last_touch, owner = _team_parts(table, clues, ignore)
     swap = np.array([1, 0, NONE])
     return _cells(np.where(near == 0, 0, 6 - near), swap[last_touch], swap[owner])
 
