@@ -15,7 +15,8 @@ from remontada.frames import run_slice
 from remontada.gaps import fill_ball_gaps
 from remontada.hints import ball_hints, tag_hints
 from remontada.hmm import Costs, decode_runs
-from remontada.vendor.possession_metrics import D
+from remontada.touch import touches, within
+from remontada.vendor.possession_metrics import A, D, H
 
 CONFIG_DIR = Path(__file__).parent / "config"
 SETTINGS_PATH = CONFIG_DIR / "hmm_v1.json"
@@ -84,6 +85,7 @@ class Features:
     team_mirrored: np.ndarray
     slow: np.ndarray
     ball_clues: np.ndarray  # how many ball-dead clues are true on each frame (0 to 3)
+    touches: np.ndarray  # team code of each touch (0 home, 1 away), -1 elsewhere
     graded_runs: list
 
     def __repr__(self):
@@ -99,6 +101,22 @@ class Features:
         if settings.ball_hints:
             scores[:, D] += hint_weight(counts, settings.temperature) * self.ball_clues
         return scores
+
+    def entry_bonus(self, settings):
+        """The touch bonus for the decoder, or None when step C is off."""
+        if settings.touch_discount <= 0:
+            return None
+        return touch_entry_bonus(self.touches, settings.touch_discount * settings.costs.switch,
+                                 settings.touch_window)
+
+
+def touch_entry_bonus(touch_codes, discount, window):
+    """(n, 3): discount on the H column within window frames of a home touch, on the A column
+    near an away touch (once, however many touches are near), and never on D (Plan 3 step C)."""
+    bonus = np.zeros((len(touch_codes), 3))
+    for team, column in ((0, H), (1, A)):
+        bonus[within(touch_codes == team, window), column] = discount
+    return bonus
 
 
 NOTHING_KNOWN_TEAM_CELL = NONE * 3 + NONE  # nearness unseen (bin 0), no touch, no control
@@ -116,6 +134,7 @@ def features(table, clues=DEFAULT_CLUES):
     team_mirrored = team.copy()
     slow = np.full(n, N_SLOW_CELLS - 1, dtype=np.int16)
     ball_clues = np.zeros(n, dtype=np.int8)
+    touch_codes = np.full(n, -1, dtype=np.int8)
     for start, stop in table.graded_runs:
         if stop <= start:
             continue
@@ -127,13 +146,15 @@ def features(table, clues=DEFAULT_CLUES):
         team[start:stop] = team_cells(part, clues, filled)
         team_mirrored[start:stop] = team_cells_mirrored(part, clues, filled)
         slow[start:stop] = slow_cells(part)
+        touch_codes[start:stop] = touches(part, clues.touch_dv, clues.touch_radius, filled)
         ball_clues[start:stop] = ball_hints(part, 1.0, clues.out_margin_m)[:, D]
-    return Features(team, team_mirrored, slow, ball_clues, list(table.graded_runs))
+    return Features(team, team_mirrored, slow, ball_clues, touch_codes, list(table.graded_runs))
 
 
 def predict(table, counts, settings, tags=None):
     """Label codes for every frame: H, A or D inside the graded runs, X outside."""
-    scores = features(table, settings.clues).scores(counts, settings)
+    f = features(table, settings.clues)
+    scores = f.scores(counts, settings)
     if settings.tag_hints and tags is not None:
         scores += tag_hints(tags, table.n_frames, hint_weight(counts, settings.temperature))
-    return decode_runs(scores, table.graded_runs, settings.costs)
+    return decode_runs(scores, table.graded_runs, settings.costs, f.entry_bonus(settings))

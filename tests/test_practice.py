@@ -232,3 +232,14 @@ def test_gap_grid_is_fixed_and_starts_with_no_filling():
     p = _practice()
     assert p.GAP_GRID == (0, 12, 25, 50, 75)
     assert p.gap_steps() == [("gap_fill_frames", [0, 12, 25, 50, 75])]
+
+
+def test_touch_grid_has_one_point_without_a_discount():
+    p = _practice()
+    base = Settings(1.0, Costs(20, 20, 80), True, False)
+    grid = p.touch_grid(base)
+    pairs = [(s.touch_discount, s.touch_window) for s in grid]
+    assert pairs[0] == (0.0, 0) and len(pairs) == 1 + 4 * 4 == len(set(pairs))
+    assert {d for d, _ in pairs[1:]} == {0.25, 0.5, 0.75, 1.0} and {w for _, w in pairs} == {0, 5, 12, 25}
+    assert all(s.costs == base.costs and s.clues == base.clues for s in grid)
+    assert p.point_name(grid[0]) == p.point_name(base)

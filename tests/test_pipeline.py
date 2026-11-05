@@ -151,3 +151,80 @@ def test_a_misspelt_clue_setting_is_refused(tmp_path):
                                 "clues": {"cary_frames": 50}}), encoding="utf-8")
     with pytest.raises(ValueError, match="cary_frames"):
         load_settings(path)
+
+
+def test_touch_entry_bonus_marks_the_touching_team_near_each_touch():
+    from remontada.pipeline import touch_entry_bonus
+    codes = np.full(30, -1, dtype=np.int8)
+    codes[10], codes[12], codes[25] = 1, 1, 0  # away touches at 10 and 12, home at 25
+    bonus = touch_entry_bonus(codes, 2.5, 3)
+    assert bonus.shape == (30, 3)
+    assert (bonus[7:16, A] == 2.5).all() and (bonus[:7, A] == 0).all() and (bonus[16:, A] == 0).all()
+    assert (bonus[22:29, H] == 2.5).all() and bonus[:22, H].sum() == 0 and bonus[29, H] == 0
+    assert (bonus[:, D] == 0).all()  # never stacks, never touches D
+    assert (touch_entry_bonus(codes, 2.5, 0)[[10, 12], A] == 2.5).all()
+    assert touch_entry_bonus(codes, 2.5, 0)[:, A].sum() == 5.0
+
+
+def test_features_keep_the_touches_per_run():
+    table, _ = _two_halves_of_possession()
+    f = features(table)
+    np.testing.assert_array_equal(f.touches, touches(table))
+    halves = features(_swapped_halves())
+    assert halves.touches.shape == (201,) and halves.touches[100] == -1
+
+
+def _bonus_settings(share, window):
+    return Settings(0.2, Costs(8, 8, 8), True, False, touch_discount=share, touch_window=window)
+
+
+def _a_touch_at_200():
+    """As _two_halves_of_possession, but the away player knocks the ball back at frame 200."""
+    xs = [-40.0 + 0.08 * t if t <= 200 else -40.0 + 0.08 * (400 - t) for t in range(400)]
+    players = [[(x + 0.5, 0.0), (x + 10.0, 5.0)] if t < 200 else [(x + 10.0, 5.0), (x + 0.5, 0.0)]
+               for t, x in enumerate(xs)]
+    labels = np.array([H] * 200 + [A] * 200, dtype=np.int8)
+    return synthetic_table([(x, 0.0) for x in xs], players, teams=[0, 1]), labels
+
+
+def test_predict_takes_the_touch_discount_as_a_share_of_the_switch_cost():
+    from remontada.hmm import decode_runs
+    from remontada.pipeline import touch_entry_bonus
+    table, labels = _a_touch_at_200()
+    assert features(table).touches[200] == 1
+    counts = count(table, labels)
+    settings = _bonus_settings(0.5, 12)
+    f = features(table)
+    bonus = touch_entry_bonus(f.touches, 0.5 * 8, 12)
+    assert bonus.max() == 4.0
+    expected = decode_runs(f.scores(counts, settings), table.graded_runs, settings.costs, entry_bonus=bonus)
+    np.testing.assert_array_equal(predict(table, counts, settings), expected)
+
+
+def test_decode_all_uses_the_touch_bonus_like_predict():
+    from remontada.lomo import decode_all
+    table, labels = _a_touch_at_200()
+    counts = count(table, labels)
+    feats = {("m1", "none"): features(table)}
+    for settings in (_bonus_settings(0.0, 0), _bonus_settings(1.0, 25)):
+        got = decode_all(feats, {"m1": counts}, settings)[("m1", "none")]
+        np.testing.assert_array_equal(got, predict(table, counts, settings))
+
+
+def test_decode_all_moves_the_switch_onto_the_touch():
+    from remontada.lomo import decode_all
+    from remontada.pipeline import Features
+
+    class Fading(Features):
+        def scores(self, counts, settings):  # H fades and A grows over frames 10..30
+            fade = np.clip((np.arange(40) - 10) / 20, 0, 1)
+            return np.stack([1 - fade, fade, np.zeros(40)], axis=1)
+
+    blank = np.zeros(40, dtype=np.int16)
+    codes = np.full(40, -1, dtype=np.int8)
+    codes[25] = 1  # an away touch
+    f = Fading(blank, blank, blank, blank.astype(np.int8), codes, [(0, 40)])
+    plain = Settings(1.0, Costs(5, 50, 50), True, False)
+    for settings, first_a in ((plain, 21), (replace(plain, touch_discount=1.0), 25)):
+        got = decode_all({("m1", "none"): f}, {"m1": None}, settings)[("m1", "none")]
+        assert int(np.argmax(got == A)) == first_a

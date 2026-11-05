@@ -205,6 +205,11 @@ ALL = "all"  # the context that sees every match: its choice is the one we ship
 # Plan 3 step B: longest ball gap filled by a straight line, in frames (0, 0.5, 1, 2, 3 s; plan Task 6).
 GAP_GRID = (0, 12, 25, 50, 75)
 
+# Plan 3 step C: the switch discount next to a touch, as a share of the switch cost, and the window
+# in frames either side of the touch (plan Task 7).
+TOUCH_DISCOUNT_GRID = (0.25, 0.5, 0.75, 1.0)
+TOUCH_WINDOW_GRID = (0, 5, 12, 25)
+
 
 def cost_grid(clues=DEFAULT_CLUES):
     """125 points at temperature 1 (only cost / temperature ratios matter), grid order fixed."""
@@ -220,6 +225,12 @@ def clue_steps():
 def gap_steps():
     """Step B as a one-step coordinate search over gap_fill_frames."""
     return [("gap_fill_frames", list(GAP_GRID))]
+
+
+def touch_grid(base):
+    """No discount first (the current best), then every discount and window: 17 points."""
+    return [replace(base, touch_discount=0.0, touch_window=0)] + [
+        replace(base, touch_discount=d, touch_window=w) for d in TOUCH_DISCOUNT_GRID for w in TOUCH_WINDOW_GRID]
 
 
 def context_matches(context, matches):

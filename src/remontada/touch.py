@@ -62,7 +62,7 @@ def touches(table, dv=TOUCH_DV, radius=TOUCH_RADIUS, ignore=None):
     jump[k:-k] = np.nan_to_num(np.hypot(*(v_after - v_before).T), nan=-np.inf)
     jump[~near] = -np.inf
     if ignore is not None:
-        jump[_within(np.asarray(ignore, dtype=bool), k)] = -np.inf
+        jump[within(np.asarray(ignore, dtype=bool), k)] = -np.inf
 
     padded = np.concatenate((np.full(k, -np.inf), jump, np.full(k, -np.inf)))
     window = sliding_window_view(padded, 2 * k + 1)  # window[t] covers t-k..t+k
@@ -73,7 +73,7 @@ def touches(table, dv=TOUCH_DV, radius=TOUCH_RADIUS, ignore=None):
     return out
 
 
-def _within(mask, k):
+def within(mask, k):
     """True on frames up to k away from a True frame of mask."""
     padded = np.concatenate((np.zeros(k, dtype=bool), mask, np.zeros(k, dtype=bool)))
     return sliding_window_view(padded, 2 * k + 1).any(axis=1)

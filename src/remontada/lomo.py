@@ -46,12 +46,14 @@ def leave_one_out_counts(by_item):
 def decode_all(feats, loo_counts, settings):
     """{(match, level): codes}, every item decoded with its own match's left-out counts."""
     keys = list(feats)
-    scores, runs, offsets, offset = [], [], {}, 0
+    scores, bonus, runs, offsets, offset = [], [], [], {}, 0
     for key in keys:
         f = feats[key]
         scores.append(f.scores(loo_counts[key[0]], settings))
+        bonus.append(f.entry_bonus(settings))
         runs += [(offset + a, offset + b) for a, b in f.graded_runs]
         offsets[key] = (offset, offset + len(f.team))
         offset += len(f.team)
-    codes = decode_runs(np.concatenate(scores), runs, settings.costs)
+    entry_bonus = None if bonus[0] is None else np.concatenate(bonus)
+    codes = decode_runs(np.concatenate(scores), runs, settings.costs, entry_bonus)
     return {key: codes[a:b] for key, (a, b) in offsets.items()}
