@@ -5,6 +5,7 @@ Viterbi call over every half of every match at every level.
 """
 import numpy as np
 
+from remontada.clues import DEFAULT_CLUES
 from remontada.degrade import LEVELS, degrade
 from remontada.evidence import Counts
 from remontada.hmm import decode_runs
@@ -14,13 +15,13 @@ from remontada.pipeline import features
 SEED = 0
 
 
-def idsse_features(seed=SEED):
+def idsse_features(seed=SEED, clues=DEFAULT_CLUES):
     """{(match, level): Features} and {match: labels} for all 7 matches at all 4 levels."""
     feats, labels = {}, {}
     for match_id in MATCH_IDS:
         table, labels[match_id] = load_idsse_cached(match_id)
         for name, level in LEVELS.items():
-            feats[match_id, name] = features(degrade(table, level, seed))
+            feats[match_id, name] = features(degrade(table, level, seed), clues)
     return feats, labels
 
 

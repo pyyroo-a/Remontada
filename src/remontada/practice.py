@@ -57,16 +57,31 @@ def case_features_many(clue_list, matches=None):
     return by_clues, labels
 
 
-def left_out_counts(feats, labels):
-    """{match: the tally summed over every case of every other match}."""
+def _counts_by_match(feats, labels):
     by_match = {}
     for case, f in feats.items():
         c = f.counts(labels[case[0]])
         by_match[case[0]] = c if case[0] not in by_match else by_match[case[0]] + c
+    return by_match
+
+
+def _sum(counts):
     total = None
-    for c in by_match.values():
+    for c in counts:
         total = c if total is None else total + c
+    return total
+
+
+def left_out_counts(feats, labels):
+    """{match: the tally summed over every case of every other match}."""
+    by_match = _counts_by_match(feats, labels)
+    total = _sum(by_match.values())
     return {m: Counts(total.team - c.team, total.slow - c.slow) for m, c in by_match.items()}
+
+
+def all_counts(feats, labels):
+    """The tally summed over every case of every match: what ships (the "all" context's tally)."""
+    return _sum(_counts_by_match(feats, labels).values())
 
 
 def score_point(feats, labels, settings, counts=None):
@@ -241,6 +256,33 @@ def scorer_cost_grid(base):
     c = base.costs
     return [replace(base, scorer="model", costs=Costs(c.switch * a, c.to_dead * b, c.from_dead * d))
             for a in SCORER_COST_STEPS for b in SCORER_COST_STEPS for d in SCORER_COST_STEPS]
+
+
+def final_cost_grid(base):
+    """Step E: 27 points, every cost of base times 1, 0.5 or 2 (base first), nothing else changed."""
+    c = base.costs
+    return [replace(base, costs=Costs(c.switch * a, c.to_dead * b, c.from_dead * d))
+            for a in SCORER_COST_STEPS for b in SCORER_COST_STEPS for d in SCORER_COST_STEPS]
+
+
+def selection_gap(results, chosen):
+    """(in-sample, nested): the shipped choice scored on the matches it was chosen on, against the
+    nested estimate (each match scored by the choice made without it). A big gap means the search
+    is fitting the practice matches rather than finding settings that carry over."""
+    matches = sorted(c for c in chosen if c != ALL)
+    in_sample = objective(results[chosen[ALL]], matches)
+    nested = float(np.mean([objective(results[chosen[m]], [m]) for m in matches]))
+    return in_sample, nested
+
+
+def shipped_settings(steps, order, fallback):
+    """The "all" settings of the last KEEP in order (tag hints off: Smart Tagging is not ours to
+    rely on), else fallback."""
+    from remontada.pipeline import settings_from_dict
+    for step in reversed(order):
+        if steps.get(step, {}).get("verdict") == "KEEP":
+            return replace(settings_from_dict(steps[step]["contexts"][ALL]), tag_hints=False)
+    return fallback
 
 
 def train_left_out_scorers(rows_by_match):

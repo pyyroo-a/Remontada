@@ -6,6 +6,8 @@
     python scripts/plan3.py search-gaps    # step B: fill short ball gaps, 0 to 3 s
     python scripts/plan3.py search-touch   # step C: cheaper switches next to a touch
     python scripts/plan3.py search-scorer  # step D: a learned scorer for who has the ball
+    python scripts/plan3.py search-final   # step E: the costs once more on the final version
+    python scripts/plan3.py freeze         # write hmm_v2.json and the tally that ships
 
 Each step is judged by the acceptance rule against the best version so far and recorded as KEEP
 or DROP in results/plan3/state.json. Every match keeps its own path through the steps (chosen on
@@ -25,7 +27,9 @@ from remontada import practice
 from remontada.baseline import nearest_team, smooth
 from remontada.degrade import DEGRADE_VERSION, LEVELS, degrade
 from remontada.load_idsse import MATCH_IDS, load_idsse_cached
-from remontada.pipeline import CONFIG_DIR, features, load_settings, settings_from_dict, settings_to_dict
+from remontada.evidence import save_counts
+from remontada.pipeline import (CONFIG_DIR, EVIDENCE_PATH, SCORER_PATH, features, load_settings,
+                                 settings_from_dict, settings_to_dict)
 from remontada.scoreboard import score
 
 RESULTS_DIR = Path(__file__).resolve().parents[1] / "results" / "plan3"
@@ -279,10 +283,56 @@ def search_scorer(args):
     record_step(args.results_dir, "D-scorer", levels, {c: by_name[n] for c, n in chosen.items()}, label, levels_now, bar)
 
 
+# ---------------------------------------------------------------- step E and the freeze
+
+
+def search_final(args):
+    """The costs once more on the final version (settings interact), 3 x 3 x 3 around each path's
+    own. Judged by the same acceptance rule as every step, so the costs change only if the change
+    carries over to matches the search never saw. Also prints the selection gap: the shipped
+    choice on the matches it was chosen on, against the nested estimate."""
+    label, contexts, levels_now, bar = current_best(args.results_dir, "E-final")
+    grids = {c: practice.final_cost_grid(s)[: args.limit] for c, s in contexts.items()}
+    unique = list({practice.point_name(s): s for grid in grids.values() for s in grid}.values())
+    results = Scorer(args.matches).score_many(unique)
+    practice.save_results(args.results_dir / "search-final.json", results)
+    names = {c: [practice.point_name(s) for s in grid] for c, grid in grids.items()}
+    levels, chosen = practice.nested_step(results, names)
+    by_name = {practice.point_name(s): s for s in unique}
+    verdict = record_step(args.results_dir, "E-final", levels, {c: by_name[n] for c, n in chosen.items()},
+                          label, levels_now, bar)
+    rescored, _ = practice.nested_step(results, {c: names[c][:1] for c in names})
+    print_levels(label + ", rescored", rescored)
+    for title, picks in (("E-final", chosen), (label, {c: names[c][0] for c in names})):
+        in_sample, nested = practice.selection_gap(results, picks)
+        print("selection gap {:<10} in-sample {:.4f}  nested {:.4f}  gap {:.4f}".format(
+            title, in_sample, nested, in_sample - nested))
+    return verdict
+
+
+def freeze(args):
+    """hmm_v2.json from the last KEEP (tag hints off), and the tally that ships: learned on every
+    practice case of all 7 IDSSE matches with the shipped clue settings."""
+    steps = load_state(args.results_dir)["steps"]
+    if "E-final" not in steps:
+        raise SystemExit("run search-final first")
+    shipped = practice.shipped_settings(steps, STEP_ORDER, load_settings(CONFIG_DIR / "hmm_v1.json"))
+    (CONFIG_DIR / "hmm_v2.json").write_text(json.dumps(settings_to_dict(shipped), indent=1) + "\n", encoding="utf-8")
+    log("wrote hmm_v2.json: {}".format(practice.point_name(shipped)))
+    if shipped.scorer == "model":
+        SCORER_PATH.write_text((args.results_dir / "scorer-all.json").read_text(encoding="utf-8"), encoding="utf-8")
+        log("wrote " + SCORER_PATH.name)
+    by_clues, labels = practice.case_features_many([shipped.clues], MATCH_IDS)
+    total = practice.all_counts(by_clues[shipped.clues], labels)
+    save_counts(total, EVIDENCE_PATH)
+    log("wrote {} ({} team frames, {} slow frames, {} cases)".format(
+        EVIDENCE_PATH.name, total.team.sum(), total.slow.sum(), len(by_clues[shipped.clues])))
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("command", choices=["start", "search-costs", "search-clues", "search-gaps",
-                                                 "search-touch", "search-scorer"])
+                                                 "search-touch", "search-scorer", "search-final", "freeze"])
     parser.add_argument("--results-dir", type=Path, default=RESULTS_DIR)
     parser.add_argument("--matches", default=",".join(MATCH_IDS), help="for quick checks only")
     parser.add_argument("--limit", type=int, default=None, help="first N points or steps, for quick checks only")
@@ -292,7 +342,7 @@ def main(argv=None):
     log("plan3 {} on {} matches".format(args.command, len(args.matches)))
     {"start": start, "search-costs": search_costs, "search-clues": search_clues,
      "search-gaps": search_gaps, "search-touch": search_touch,
-     "search-scorer": search_scorer}[args.command](args)
+     "search-scorer": search_scorer, "search-final": search_final, "freeze": freeze}[args.command](args)
     return 0
 
 

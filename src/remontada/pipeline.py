@@ -20,7 +20,7 @@ from remontada.touch import touches, within
 from remontada.vendor.possession_metrics import A, D, H
 
 CONFIG_DIR = Path(__file__).parent / "config"
-SETTINGS_PATH = CONFIG_DIR / "hmm_v1.json"
+SETTINGS_PATH = CONFIG_DIR / "hmm_v2.json"  # plan 3, frozen by scripts/plan3.py freeze
 EVIDENCE_PATH = CONFIG_DIR / "evidence_idsse.json"
 SCORER_PATH = CONFIG_DIR / "scorer_v2.json"
 

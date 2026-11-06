@@ -255,3 +255,51 @@ def test_scorer_grid_is_3_by_3_by_3_around_the_current_costs():
     assert sorted({g.costs.to_dead for g in grid}) == [10, 20, 40]
     assert sorted({g.costs.from_dead for g in grid}) == [40, 80, 160]
     assert all(g.clues == base.clues and g.temperature == 1.0 for g in grid)
+
+
+def test_final_grid_is_3_by_3_by_3_around_the_current_costs():
+    p = _practice()
+    base = Settings(1.0, Costs(20, 20, 80), True, False)
+    grid = p.final_cost_grid(base)
+    assert len(grid) == 27 and len({g.costs for g in grid}) == 27
+    assert p.point_name(grid[0]) == p.point_name(base)
+    assert sorted({g.costs.switch for g in grid}) == [10, 20, 40]
+    assert sorted({g.costs.to_dead for g in grid}) == [10, 20, 40]
+    assert sorted({g.costs.from_dead for g in grid}) == [40, 80, 160]
+    assert all(g.scorer == "tally" and g.clues == base.clues and g.temperature == 1.0 for g in grid)
+
+
+def test_selection_gap_compares_the_shipped_choice_with_the_nested_estimate():
+    p = _practice()
+    results = {"a": _fake_scores({"m1": 0.2, "m2": 0.6}), "b": _fake_scores({"m1": 0.4, "m2": 0.4})}
+    in_sample, nested = p.selection_gap(results, {"m1": "a", "m2": "b", "all": "a"})
+    assert abs(in_sample - 0.4) < 1e-12  # a on both matches
+    assert abs(nested - (0.2 + 0.4) / 2) < 1e-12  # each match scored by its own choice
+
+
+def _saved_step(verdict, switch):
+    from remontada.pipeline import settings_to_dict
+    s = Settings(1.0, Costs(switch, 20, 80), True, True)
+    return {"verdict": verdict, "contexts": {"m1": settings_to_dict(s), "all": settings_to_dict(s)}}
+
+
+def test_shipped_settings_take_the_last_keep_with_tag_hints_off():
+    p = _practice()
+    fallback = Settings(0.2, Costs(8, 8, 8), True, False)
+    order = ("A", "B", "C")
+    steps = {"A": _saved_step("KEEP", 20), "B": _saved_step("KEEP", 10), "C": _saved_step("DROP", 40)}
+    shipped = p.shipped_settings(steps, order, fallback)
+    assert shipped.costs.switch == 10 and not shipped.tag_hints
+    assert p.shipped_settings({"C": _saved_step("DROP", 40)}, order, fallback) == fallback
+
+
+def test_all_counts_add_every_case_of_every_match():
+    p = _practice()
+    (t1, l1), (t2, l2) = _toy_match(False), _toy_match(True)
+    labels = {"m1": l1, "m2": l2}
+    feats = {("m1", "none", "hard", 0): features(t1), ("m2", "none", "hard", 0): features(t2)}
+    total = p.all_counts(feats, labels)
+    left_out = p.left_out_counts(feats, labels)
+    mine = feats["m1", "none", "hard", 0].counts(labels["m1"])
+    np.testing.assert_array_equal(total.team, left_out["m1"].team + mine.team)
+    np.testing.assert_array_equal(total.slow, left_out["m1"].slow + mine.slow)

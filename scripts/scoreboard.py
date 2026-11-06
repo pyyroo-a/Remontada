@@ -1,7 +1,7 @@
 """Score the baseline or our decoder on every IDSSE match at every messiness level.
 
     python scripts/scoreboard.py                              # the official baseline
-    python scripts/scoreboard.py --method hmm                 # our decoder, settings in hmm_v1.json
+    python scripts/scoreboard.py --method hmm                 # our decoder, settings in hmm_v2.json
     python scripts/scoreboard.py --method hmm --no-ball-hints
 
 For the decoder, the evidence table that scores a match is learned on the other six matches.
@@ -34,7 +34,7 @@ def baseline_codes():
 
 
 def hmm_codes(settings):
-    feats, labels = idsse_features(SEED)
+    feats, labels = idsse_features(SEED, settings.clues)
     return decode_all(feats, leave_one_out_counts(counts_by_item(feats, labels)), settings), labels
 
 

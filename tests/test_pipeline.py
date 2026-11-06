@@ -110,6 +110,14 @@ def test_a_pass_flying_1m_from_an_opponent_stays_home():
     assert (codes[10:51] == H).all()
 
 
+def test_shipped_settings_are_v2():
+    from remontada import pipeline
+    assert pipeline.SETTINGS_PATH == CONFIG_DIR / "hmm_v2.json"
+    s = load_settings()
+    assert s.temperature == 1.0 and not s.tag_hints and s.ball_hints
+    assert s.scorer == "tally"  # step D was dropped, so no scorer file ships
+
+
 def test_hmm_v1_still_loads_with_defaults():
     from remontada.clues import DEFAULT_CLUES
     s = load_settings(CONFIG_DIR / "hmm_v1.json")
