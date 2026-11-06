@@ -116,6 +116,11 @@ def scores_from_cells(team_cell, slow_cell, counts, temperature):
     return temperature * scores
 
 
+def slow_logs(slow_cell, counts):
+    """(n, 2): log P(slow cell | live) and log P(slow cell | dead), the players' speed part."""
+    return np.log(_probabilities(counts.slow)[slow_cell])
+
+
 def hint_weight(counts, temperature):
     """Decision 5: the typical H-vs-A pull of one live frame's team clues.
 

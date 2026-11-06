@@ -210,6 +210,9 @@ GAP_GRID = (0, 12, 25, 50, 75)
 TOUCH_DISCOUNT_GRID = (0.25, 0.5, 0.75, 1.0)
 TOUCH_WINDOW_GRID = (0, 5, 12, 25)
 
+# Plan 3 step D: each cost times half, the same, or double, current costs first (plan Task 8).
+SCORER_COST_STEPS = (1.0, 0.5, 2.0)
+
 
 def cost_grid(clues=DEFAULT_CLUES):
     """125 points at temperature 1 (only cost / temperature ratios matter), grid order fixed."""
@@ -231,6 +234,60 @@ def touch_grid(base):
     """No discount first (the current best), then every discount and window: 17 points."""
     return [replace(base, touch_discount=0.0, touch_window=0)] + [
         replace(base, touch_discount=d, touch_window=w) for d in TOUCH_DISCOUNT_GRID for w in TOUCH_WINDOW_GRID]
+
+
+def scorer_cost_grid(base):
+    """27 points with the learned scorer: every cost of base times 1, 0.5 or 2 (base first)."""
+    c = base.costs
+    return [replace(base, scorer="model", costs=Costs(c.switch * a, c.to_dead * b, c.from_dead * d))
+            for a in SCORER_COST_STEPS for b in SCORER_COST_STEPS for d in SCORER_COST_STEPS]
+
+
+def train_left_out_scorers(rows_by_match):
+    """{match: a scorer trained on the other matches' rows, ALL: one trained on every match}.
+
+    rows_by_match is {match: (rows, y)} from scorer.training_rows; every row also counts mirrored.
+    """
+    from remontada.scorer import Scorer
+
+    def fit(chosen):
+        X = np.concatenate([rows_by_match[m][0] for m in chosen])
+        y = np.concatenate([rows_by_match[m][1] for m in chosen])
+        return Scorer.fit(X, y, mirrored=True)
+
+    matches = sorted(rows_by_match)
+    out = {m: fit([x for x in matches if x != m]) for m in matches}
+    out[ALL] = fit(matches)
+    return out
+
+
+def scorer_case_features(clues, matches=None, log=print):
+    """({case: Features with the held-out scorer's p_home}, {match: labels}, {context: Scorer}).
+
+    Two passes over the IDSSE cases, one case at a time to keep memory bounded: the first keeps
+    the training rows (every 5th live frame), the second works out each case's features with the
+    scorer that never saw its match.
+    """
+    from remontada.load_idsse import MATCH_IDS, load_idsse_cached
+    from remontada.scorer import frame_clues, training_rows
+    matches = list(matches or MATCH_IDS)
+    rows, labels = {}, {}
+    for match_id in matches:
+        table, labels[match_id] = load_idsse_cached(match_id)
+        parts = [training_rows(frame_clues(degrade(table, LEVELS[lv], seed, hiding), clues), labels[match_id])
+                 for _, lv, hiding, seed in all_cases([match_id])]
+        rows[match_id] = (np.concatenate([x for x, _ in parts]), np.concatenate([y for _, y in parts]))
+    log("training rows: {}".format(sum(len(y) for _, y in rows.values())))
+    scorers = train_left_out_scorers(rows)
+    log("trained {} scorers".format(len(scorers)))
+    del rows
+    feats = {}
+    for match_id in matches:
+        table, _ = load_idsse_cached(match_id)
+        for case in all_cases([match_id]):
+            _, lv, hiding, seed = case
+            feats[case] = features(degrade(table, LEVELS[lv], seed, hiding), clues, scorers[match_id])
+    return feats, labels, scorers
 
 
 def context_matches(context, matches):

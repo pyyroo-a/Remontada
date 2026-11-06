@@ -10,17 +10,19 @@ import numpy as np
 
 from remontada.clues import DEFAULT_CLUES, ClueSettings
 from remontada.evidence import (N_SLOW_CELLS, NONE, count_cells, hint_weight, scores_from_cells,
-                                slow_cells, team_cells, team_cells_mirrored)
+                                slow_cells, slow_logs, team_cells, team_cells_mirrored)
 from remontada.frames import run_slice
 from remontada.gaps import fill_ball_gaps
 from remontada.hints import ball_hints, tag_hints
 from remontada.hmm import Costs, decode_runs
+from remontada.scorer import P_CLIP, Scorer, frame_clues
 from remontada.touch import touches, within
 from remontada.vendor.possession_metrics import A, D, H
 
 CONFIG_DIR = Path(__file__).parent / "config"
 SETTINGS_PATH = CONFIG_DIR / "hmm_v1.json"
 EVIDENCE_PATH = CONFIG_DIR / "evidence_idsse.json"
+SCORER_PATH = CONFIG_DIR / "scorer_v2.json"
 
 
 @dataclass(frozen=True)
@@ -65,6 +67,11 @@ def load_settings(path=None):
     return settings_from_dict(json.loads(Path(path or SETTINGS_PATH).read_text(encoding="utf-8")))
 
 
+def load_scorer(path=None):
+    """The learned scorer for Settings.scorer == "model" (Plan 3 step D)."""
+    return Scorer.from_json(Path(path or SCORER_PATH).read_text(encoding="utf-8"))
+
+
 def settings_from_dict(saved):
     return Settings(
         temperature=float(saved["temperature"]),
@@ -87,6 +94,8 @@ class Features:
     ball_clues: np.ndarray  # how many ball-dead clues are true on each frame (0 to 3)
     touches: np.ndarray  # team code of each touch (0 home, 1 away), -1 elsewhere
     graded_runs: list
+    p_home: np.ndarray = None  # the learned scorer's P(home has the ball), when one was given
+    model_hint: float = 0.0  # that scorer's typical pull (its hint weight before temperature)
 
     def __repr__(self):
         # Never the arrays: on BAR-ATH they are frame-by-frame extracts of the match.
@@ -96,11 +105,32 @@ class Features:
         return count_cells(self.team, self.team_mirrored, self.slow, labels)
 
     def scores(self, counts, settings):
-        """Learned evidence plus ball hints (when switched on); no Smart Tagging."""
-        scores = scores_from_cells(self.team, self.slow, counts, settings.temperature)
+        """Learned evidence plus ball hints (when switched on); no Smart Tagging.
+
+        With settings.scorer == "model" the team part comes from the learned scorer:
+        H = log(2p), A = log(2(1 - p)) and 0 for D (the average of the two likelihoods is 1);
+        players' speed still comes from the tally, all times the temperature.
+        """
+        if settings.scorer == "model":
+            if self.p_home is None:
+                raise ValueError("these features were worked out without a scorer")
+            slow = slow_logs(self.slow, counts)
+            scores = np.empty((len(self.slow), 3))
+            scores[:, H] = np.log(2 * self.p_home) + slow[:, 0]
+            scores[:, A] = np.log(2 * (1 - self.p_home)) + slow[:, 0]
+            scores[:, D] = slow[:, 1]
+            scores *= settings.temperature
+        else:
+            scores = scores_from_cells(self.team, self.slow, counts, settings.temperature)
         if settings.ball_hints:
-            scores[:, D] += hint_weight(counts, settings.temperature) * self.ball_clues
+            scores[:, D] += self.hint(counts, settings) * self.ball_clues
         return scores
+
+    def hint(self, counts, settings):
+        """The hint weight for these settings: the written rule for the tally or the scorer."""
+        if settings.scorer == "model":
+            return settings.temperature * self.model_hint
+        return hint_weight(counts, settings.temperature)
 
     def entry_bonus(self, settings):
         """The touch bonus for the decoder, or None when step C is off."""
@@ -122,7 +152,7 @@ def touch_entry_bonus(touch_codes, discount, window):
 NOTHING_KNOWN_TEAM_CELL = NONE * 3 + NONE  # nearness unseen (bin 0), no touch, no control
 
 
-def features(table, clues=DEFAULT_CLUES):
+def features(table, clues=DEFAULT_CLUES, scorer=None):
     """Clues worked out on each graded run on its own, so nothing crosses the half-time gap.
 
     Frames outside every run get the "nothing known" cells: unseen nearness, no touch, no
@@ -148,13 +178,24 @@ def features(table, clues=DEFAULT_CLUES):
         slow[start:stop] = slow_cells(part)
         touch_codes[start:stop] = touches(part, clues.touch_dv, clues.touch_radius, filled)
         ball_clues[start:stop] = ball_hints(part, 1.0, clues.out_margin_m)[:, D]
-    return Features(team, team_mirrored, slow, ball_clues, touch_codes, list(table.graded_runs))
+    if scorer is None:
+        return Features(team, team_mirrored, slow, ball_clues, touch_codes, list(table.graded_runs))
+    p_home = np.clip(scorer.p_home(frame_clues(table, clues)), P_CLIP, 1 - P_CLIP)
+    return Features(team, team_mirrored, slow, ball_clues, touch_codes, list(table.graded_runs),
+                    p_home, scorer.hint_weight)
 
 
-def predict(table, counts, settings, tags=None):
-    """Label codes for every frame: H, A or D inside the graded runs, X outside."""
-    f = features(table, settings.clues)
+def predict(table, counts, settings, tags=None, scorer=None):
+    """Label codes for every frame: H, A or D inside the graded runs, X outside.
+
+    With settings.scorer == "model", scorer (default: the file at SCORER_PATH) gives the H versus
+    A part."""
+    if settings.scorer == "model":
+        scorer = scorer if scorer is not None else load_scorer()
+    else:
+        scorer = None
+    f = features(table, settings.clues, scorer)
     scores = f.scores(counts, settings)
     if settings.tag_hints and tags is not None:
-        scores += tag_hints(tags, table.n_frames, hint_weight(counts, settings.temperature))
+        scores += tag_hints(tags, table.n_frames, f.hint(counts, settings))
     return decode_runs(scores, table.graded_runs, settings.costs, f.entry_bonus(settings))

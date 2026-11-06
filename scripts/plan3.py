@@ -5,6 +5,7 @@
     python scripts/plan3.py search-clues   # step A, part 2: coordinate search over the clues
     python scripts/plan3.py search-gaps    # step B: fill short ball gaps, 0 to 3 s
     python scripts/plan3.py search-touch   # step C: cheaper switches next to a touch
+    python scripts/plan3.py search-scorer  # step D: a learned scorer for who has the ball
 
 Each step is judged by the acceptance rule against the best version so far and recorded as KEEP
 or DROP in results/plan3/state.json. Every match keeps its own path through the steps (chosen on
@@ -248,10 +249,40 @@ def search_touch(args):
     print_levels("no discount, rescored (rounding)", rescored)
 
 
+# ---------------------------------------------------------------- step D
+
+
+def search_scorer(args):
+    """The learned scorer in place of the tally's H versus A part, with the costs searched again on
+    a 3 x 3 x 3 grid around each path's own. Every case is scored with a scorer (and a tally for
+    players' speed) that never saw its match. The scorer trained on all 7 is saved for the record."""
+    label, contexts, levels_now, bar = current_best(args.results_dir, "D-scorer")
+    grids = {c: practice.scorer_cost_grid(s)[: args.limit] for c, s in contexts.items()}
+    results = {}
+    for clues in dict.fromkeys(s.clues for s in contexts.values()):
+        log("scorer features for {}".format(practice.point_name(replace(next(
+            s for s in contexts.values() if s.clues == clues), scorer="model"))))
+        feats, labels, scorers = practice.scorer_case_features(clues, args.matches, log)
+        if contexts[practice.ALL].clues == clues:
+            (args.results_dir / "scorer-all.json").write_text(scorers[practice.ALL].to_json(), encoding="utf-8")
+            log("hint weight of the scorer trained on all 7: {:.4f}".format(scorers[practice.ALL].hint_weight))
+        counts = practice.left_out_counts(feats, labels)
+        points = {practice.point_name(s): s for c, grid in grids.items() if contexts[c].clues == clues for s in grid}
+        for i, (name, s) in enumerate(points.items(), 1):
+            results[name] = practice.score_point(feats, labels, s, counts)
+            log("{}/{} {}  objective {:.4f}".format(i, len(points), name, practice.objective(results[name])))
+        del feats
+    practice.save_results(args.results_dir / "search-scorer.json", results)
+    names = {c: [practice.point_name(s) for s in grid] for c, grid in grids.items()}
+    levels, chosen = practice.nested_step(results, names)
+    by_name = {practice.point_name(s): s for grid in grids.values() for s in grid}
+    record_step(args.results_dir, "D-scorer", levels, {c: by_name[n] for c, n in chosen.items()}, label, levels_now, bar)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("command", choices=["start", "search-costs", "search-clues", "search-gaps",
-                                                 "search-touch"])
+                                                 "search-touch", "search-scorer"])
     parser.add_argument("--results-dir", type=Path, default=RESULTS_DIR)
     parser.add_argument("--matches", default=",".join(MATCH_IDS), help="for quick checks only")
     parser.add_argument("--limit", type=int, default=None, help="first N points or steps, for quick checks only")
@@ -260,7 +291,8 @@ def main(argv=None):
     args.results_dir.mkdir(parents=True, exist_ok=True)
     log("plan3 {} on {} matches".format(args.command, len(args.matches)))
     {"start": start, "search-costs": search_costs, "search-clues": search_clues,
-     "search-gaps": search_gaps, "search-touch": search_touch}[args.command](args)
+     "search-gaps": search_gaps, "search-touch": search_touch,
+     "search-scorer": search_scorer}[args.command](args)
     return 0
 
 

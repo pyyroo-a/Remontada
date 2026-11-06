@@ -243,3 +243,15 @@ def test_touch_grid_has_one_point_without_a_discount():
     assert {d for d, _ in pairs[1:]} == {0.25, 0.5, 0.75, 1.0} and {w for _, w in pairs} == {0, 5, 12, 25}
     assert all(s.costs == base.costs and s.clues == base.clues for s in grid)
     assert p.point_name(grid[0]) == p.point_name(base)
+
+
+def test_scorer_grid_is_3_by_3_by_3_around_the_current_costs():
+    p = _practice()
+    base = Settings(1.0, Costs(20, 20, 80), True, False)
+    grid = p.scorer_cost_grid(base)
+    assert len(grid) == 27 and len({g.costs for g in grid}) == 27
+    assert grid[0].costs == base.costs and all(g.scorer == "model" for g in grid)
+    assert sorted({g.costs.switch for g in grid}) == [10, 20, 40]
+    assert sorted({g.costs.to_dead for g in grid}) == [10, 20, 40]
+    assert sorted({g.costs.from_dead for g in grid}) == [40, 80, 160]
+    assert all(g.clues == base.clues and g.temperature == 1.0 for g in grid)
