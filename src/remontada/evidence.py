@@ -13,8 +13,9 @@ from pathlib import Path
 
 import numpy as np
 
+from remontada.clues import DEFAULT_CLUES
 from remontada.dead_ball import players_median_speed
-from remontada.touch import CARRY_FRAMES, carry_forward, control, nearest_by_team, touches
+from remontada.touch import carry_forward, control, nearest_by_team, touches
 from remontada.vendor.possession_metrics import A, D, H, X
 
 NEAR_EDGES = [-3.0, -1.0, 1.0, 3.0]  # margin = d_away - d_home in m; bin 0 is "ball unseen"
@@ -33,13 +34,13 @@ class Counts:
         return Counts(self.team + other.team, self.slow + other.slow)
 
 
-def _team_parts(table):
+def _team_parts(table, clues, ignore=None):
     home, away = nearest_by_team(table)
     with np.errstate(invalid="ignore"):
         margin = away - home  # NaN when the ball is unseen or neither team is visible
     near = np.where(np.isnan(margin), 0, 1 + np.digitize(margin, NEAR_EDGES))
-    last_touch = carry_forward(touches(table), CARRY_FRAMES)
-    owner = control(table)
+    last_touch = carry_forward(touches(table, clues.touch_dv, clues.touch_radius, ignore), clues.carry_frames)
+    owner = control(table, clues.control_radius, clues.control_min_frames)
     return near, np.where(last_touch < 0, NONE, last_touch), np.where(owner < 0, NONE, owner)
 
 
@@ -47,13 +48,14 @@ def _cells(near, last_touch, owner):
     return (near * 9 + last_touch * 3 + owner).astype(np.int16)
 
 
-def team_cells(table):
-    return _cells(*_team_parts(table))
+def team_cells(table, clues=DEFAULT_CLUES, ignore=None):
+    """ignore: frames whose ball position is filled, not measured (never a touch)."""
+    return _cells(*_team_parts(table, clues, ignore))
 
 
-def team_cells_mirrored(table):
+def team_cells_mirrored(table, clues=DEFAULT_CLUES, ignore=None):
     """The cells the same frames would have with home and away swapped."""
-    near, last_touch, owner = _team_parts(table)
+    near, last_touch, owner = _team_parts(table, clues, ignore)
     swap = np.array([1, 0, NONE])
     return _cells(np.where(near == 0, 0, 6 - near), swap[last_touch], swap[owner])
 
@@ -63,8 +65,9 @@ def slow_cells(table):
     return np.where(np.isnan(speed), N_SLOW_CELLS - 1, np.digitize(speed, SLOW_EDGES)).astype(np.int16)
 
 
-def count(table, labels):
-    return count_cells(team_cells(table), team_cells_mirrored(table), slow_cells(table), labels)
+def count(table, labels, clues=DEFAULT_CLUES):
+    return count_cells(team_cells(table, clues), team_cells_mirrored(table, clues), slow_cells(table),
+                       labels)
 
 
 def count_cells(team_cell, team_cell_mirrored, slow_cell, labels):
@@ -96,9 +99,9 @@ def _probabilities(table_counts):
     return smoothed / smoothed.sum(axis=0)
 
 
-def emission_scores(table, counts, temperature):
+def emission_scores(table, counts, temperature, clues=DEFAULT_CLUES):
     """(n, 3) scores in column order H, A, D. Team clues never push towards or against D."""
-    return scores_from_cells(team_cells(table), slow_cells(table), counts, temperature)
+    return scores_from_cells(team_cells(table, clues), slow_cells(table), counts, temperature)
 
 
 def scores_from_cells(team_cell, slow_cell, counts, temperature):
@@ -111,6 +114,11 @@ def scores_from_cells(team_cell, slow_cell, counts, temperature):
     scores[:, A] = np.log(team[:, 1]) + np.log(slow[:, 0])
     scores[:, D] = np.log(team.mean(axis=1)) + np.log(slow[:, 1])
     return temperature * scores
+
+
+def slow_logs(slow_cell, counts):
+    """(n, 2): log P(slow cell | live) and log P(slow cell | dead), the players' speed part."""
+    return np.log(_probabilities(counts.slow)[slow_cell])
 
 
 def hint_weight(counts, temperature):

@@ -21,6 +21,14 @@ def test_parse_frames_codes_and_teams(tmp_path):
     assert tags[2].team == 1
 
 
+def test_bad_time_does_not_show_its_value(tmp_path):
+    (tmp_path / "t.xml").write_text(SAMPLE.replace("447.38", "44x.38"), encoding="utf-8")
+    with pytest.raises(ValueError) as err:
+        parse_smart_tagging(tmp_path / "t.xml")
+    assert "44x" not in str(err.value) and "instance 1" in str(err.value)
+    assert err.value.__cause__ is None and err.value.__suppress_context__
+
+
 def test_tag_repr_hides_the_match():
     # like FrameTable: a printed tag or a failed test must not show match data
     assert repr(Tag("BUILD UP", 250, 300, 0, None)) == "Tag(...)"

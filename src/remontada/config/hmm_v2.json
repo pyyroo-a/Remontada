@@ -1,0 +1,20 @@
+{
+ "temperature": 1.0,
+ "switch": 20.0,
+ "to_dead": 20.0,
+ "from_dead": 80.0,
+ "ball_hints": true,
+ "tag_hints": false,
+ "clues": {
+  "touch_dv": 4.5,
+  "touch_radius": 1.5,
+  "control_radius": 2.0,
+  "control_min_frames": 5,
+  "carry_frames": 75,
+  "out_margin_m": 0.5,
+  "gap_fill_frames": 0
+ },
+ "touch_discount": 0.0,
+ "touch_window": 0,
+ "scorer": "tally"
+}

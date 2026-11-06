@@ -6,12 +6,26 @@ setting is only kept if it works across the whole sweep.
 Degrade v2 (decided 3 Nov 2026): positions wobble by a slow drift, not a fresh jump every frame,
 and half of the hidden ball frames start where DATA.md says real trackers lose the ball (ball in
 the air, or players crowded around it).
+
+Degrade v3 (Plan 3, 4 Nov 2026): the ball wobbles too, with the same slow drift and size as the
+players (real trackers wobble the ball as well), and the ball can be hidden in two styles: "hard"
+(v2's way, half of it on hard frames) or "random" (every stretch placed anywhere). We cannot check
+which style is closer to real tracking without looking at our match, so every setting is scored
+under both.
+
+Degrade v4 (Plan 3 review, 6 Nov 2026): v3's ball wobble makes a still ball read 1 to 2 m/s at
+medium and heavy (ball speed is measured over 5 frames), but real trackers usually smooth the ball.
+So the ball comes in two styles too: "rough" (v3's wobble) and "smooth" (no wobble), and every
+setting is scored under both.
 """
 from collections import deque
 from dataclasses import dataclass, replace
 
 import numpy as np
 
+DEGRADE_VERSION = 4
+HIDING_STYLES = ("hard", "random")
+BALL_STYLES = ("rough", "smooth")  # v4: smooth = the ball is not wobbled (real trackers smooth it)
 SPARE_SLOTS_PER_TEAM = 2
 WOBBLE_TIME_S = 1.0  # how long a wobble takes to fade
 HARD_SHARE = 0.5  # share of the hidden ball frames placed on hard frames first
@@ -45,16 +59,16 @@ def hard_frames(table):
     return air | crowd
 
 
-def _hide_ball(table, level, rng):
+def _hide_ball(table, level, rng, hiding):
     """NaN stretches of exponential length until the target share of frames is hidden.
 
-    The first HARD_SHARE of the target starts on hard frames that are still visible, the rest
-    anywhere.
+    With "hard" hiding, the first HARD_SHARE of the target starts on hard frames that are still
+    visible and the rest anywhere; with "random" hiding every stretch starts anywhere.
     """
     hidden = np.zeros(table.n_frames, dtype=bool)
     target = int(level.ball_hidden_share * table.n_frames)
     mean_frames = level.ball_gap_mean_s * table.fps
-    hard = hard_frames(table)
+    hard = hard_frames(table) if hiding == "hard" else np.zeros(table.n_frames, dtype=bool)
     count = 0
     while count < target:
         open_hard = np.flatnonzero(hard & ~hidden) if count < HARD_SHARE * target else []
@@ -71,7 +85,10 @@ def _hide_ball(table, level, rng):
 
 
 def _wobble(player_xy, noise_m, fps, rng):
-    """Slow drift per slot and axis: each frame keeps most of the last frame's error."""
+    """Slow drift per slot and axis: each frame keeps most of the last frame's error.
+
+    Works on any array of positions with frames first (players or the ball). NaN stays NaN.
+    """
     rho = np.exp(-1.0 / (fps * WOBBLE_TIME_S))
     kicks = rng.normal(0.0, noise_m, player_xy.shape)
     error = np.empty_like(kicks)
@@ -120,12 +137,22 @@ def _break_tracks(player_xy, teams, level, fps, rng):
     return out, np.array(output_teams, dtype=np.int8)
 
 
-def degrade(table, level, seed):
-    """A messier copy of the table. Same level and seed always give the same result."""
+def degrade(table, level, seed, hiding="hard", ball="rough"):
+    """A messier copy of the table. Same level, seed, hiding and ball style always give the same
+    result.
+
+    Random draws happen in a fixed order: hide ball, player wobble, ball wobble, track breaks. A
+    smooth ball still draws its wobble but does not apply it, so a rough and a smooth case differ
+    only in the ball.
+    """
+    if hiding not in HIDING_STYLES:
+        raise ValueError(f"unknown hiding style {hiding!r}, expected one of {HIDING_STYLES}")
+    if ball not in BALL_STYLES:
+        raise ValueError(f"unknown ball style {ball!r}, expected one of {BALL_STYLES}")
     rng = np.random.default_rng(seed)
     ball_xy, ball_z = table.ball_xy, table.ball_z
     if level.ball_hidden_share > 0:
-        hidden = _hide_ball(table, level, rng)
+        hidden = _hide_ball(table, level, rng, hiding)
         ball_xy = ball_xy.copy()
         ball_z = ball_z.copy()
         ball_xy[hidden] = np.nan
@@ -134,6 +161,8 @@ def degrade(table, level, seed):
     player_xy, teams = table.player_xy, table.player_team
     if level.position_noise_m > 0:
         player_xy = _wobble(player_xy, level.position_noise_m, table.fps, rng)
+        wobbled = _wobble(ball_xy, level.position_noise_m, table.fps, rng)
+        ball_xy = wobbled if ball == "rough" else ball_xy
     if level.track_breaks_per_min > 0:
         player_xy, teams = _break_tracks(player_xy, teams, level, table.fps, rng)
 

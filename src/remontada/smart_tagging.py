@@ -31,10 +31,16 @@ def parse_smart_tagging(path, fps=25):
         labels = {}
         for label in instance.findall("label"):
             labels.setdefault(label.findtext("group", "").strip(), label.findtext("text", "").strip())
+        try:
+            start, end = float(instance.findtext("start")), float(instance.findtext("end"))
+        except (TypeError, ValueError):
+            # Never the value itself: an error message must not show match data.
+            name = instance.findtext("ID", "?").strip()
+            raise ValueError(f"bad time in Smart Tagging instance {name}") from None
         tags.append(Tag(
             code=instance.findtext("code", "").strip().upper(),
-            start_frame=round(float(instance.findtext("start")) * fps),
-            end_frame=round(float(instance.findtext("end")) * fps),
+            start_frame=round(start * fps),
+            end_frame=round(end * fps),
             team=TEAMS.get(labels.get("Team", "").lower(), -1),
             type=labels.get("Type"),
         ))

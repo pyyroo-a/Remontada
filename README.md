@@ -30,12 +30,15 @@ The match data is licensed for the competition only and is **never** in this rep
 python scripts/scoreboard.py                                # the official baseline on IDSSE
 python scripts/scoreboard.py --method hmm                   # our decoder on IDSSE
 python scripts/scoreboard.py --method hmm --no-ball-hints   # the same without ball-dead hints
-python scripts/tune_rough.py                                # rough settings grid (plan 2)
-python scripts/tune_rough.py --write-counts                 # relearn config/evidence_idsse.json
+python scripts/plan3.py start                               # plan 3 practice: the numbers to beat
+python scripts/plan3.py search-final                        # plan 3 step E (steps A to D: see the script)
+python scripts/plan3.py freeze                              # write hmm_v2.json and evidence_idsse.json
 python -m remontada.make_submission --method hmm --out outputs/remontada_hmm.csv
 ```
 
-The decoder's settings are in `src/remontada/config/hmm_v1.json`.
+The decoder's settings are in `src/remontada/config/hmm_v2.json` (plan 3, tuned with nested
+leave-one-match-out on IDSSE only; `hmm_v1.json` is plan 2's). `evidence_idsse.json` is the tally
+learned on every practice case of the 7 IDSSE matches with those settings' clues.
 
 ## Credits
 

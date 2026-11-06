@@ -1,0 +1,395 @@
+"""Plan 3 practice runs on IDSSE (external data only, CC BY 4.0), every number nested.
+
+    python scripts/plan3.py start          # baseline and Plan 2 on degrade v3: the numbers to beat
+    python scripts/plan3.py search-costs   # step A, part 1: 125 cost points
+    python scripts/plan3.py search-clues   # step A, part 2: coordinate search over the clues
+    python scripts/plan3.py search-gaps    # step B: fill short ball gaps, 0 to 3 s
+    python scripts/plan3.py search-touch   # step C: cheaper switches next to a touch
+    python scripts/plan3.py search-scorer  # step D: a learned scorer for who has the ball
+    python scripts/plan3.py search-final   # step E: the costs once more on the final version
+    python scripts/plan3.py freeze         # write hmm_v2.json and the tally that ships
+    python scripts/plan3.py compare-v2     # degrade v4 rerun: does the new step A beat hmm_v2.json?
+
+The degrade v4 rerun (spec section 10) runs start, search-costs, search-clues and compare-v2 with
+--results-dir results/plan3b.
+
+Each step is judged by the acceptance rule against the best version so far and recorded as KEEP
+or DROP in results/plan3/state.json. Every match keeps its own path through the steps (chosen on
+the other six), so the estimate stays nested; the "all" path, chosen on all 7, is what we ship.
+
+Results go to results/plan3/*.json (IDSSE scores only). Nothing here touches our match: the rules
+(clarified 4 Nov 2026) allow tuning and checking only on external data.
+"""
+import argparse
+import json
+import sys
+import time
+from dataclasses import replace
+from pathlib import Path
+
+from remontada import practice
+from remontada.baseline import nearest_team, smooth
+from remontada.degrade import DEGRADE_VERSION, LEVELS, degrade
+from remontada.load_idsse import MATCH_IDS, load_idsse_cached
+from remontada.evidence import save_counts
+from remontada.pipeline import (CONFIG_DIR, EVIDENCE_PATH, SCORER_PATH, features, load_settings,
+                                 settings_from_dict, settings_to_dict)
+from remontada.scoreboard import score
+
+RESULTS_DIR = Path(__file__).resolve().parents[1] / "results" / "plan3"
+BASELINE_WINDOW = 50
+STEP_ORDER = ("A-costs", "A-clues", "B-gaps", "C-touch", "D-scorer", "E-final")
+T0 = time.perf_counter()
+
+
+def log(text):
+    print("[{:6.0f} s] {}".format(time.perf_counter() - T0, text), flush=True)
+
+
+def print_header():
+    print("{:<34} {}".format("spellF1 (nested, IDSSE)", " ".join("{:>7}".format(lv) for lv in practice.LEVEL_NAMES)))
+
+
+def print_levels(title, levels, macro=None):
+    row = " ".join("{:>7.4f}".format(levels[lv]) for lv in practice.LEVEL_NAMES)
+    mh = sum(levels[lv] for lv in practice.MEDIUM_HEAVY) / len(practice.MEDIUM_HEAVY)
+    print("{:<34} {}   medium+heavy {:.4f}".format(title, row, mh))
+    if macro is not None:
+        print("{:<34} {}".format("  macroF1", " ".join("{:>7.4f}".format(macro[lv]) for lv in practice.LEVEL_NAMES)))
+
+
+# ---------------------------------------------------------------- start
+
+
+def start(args):
+    """The baseline, Plan 2 and (once frozen) hmm_v2.json on every case: the numbers to beat."""
+    plan2 = load_settings(CONFIG_DIR / "hmm_v1.json")
+    v2_path = CONFIG_DIR / "hmm_v2.json"
+    v2 = load_settings(v2_path) if v2_path.is_file() else None
+    assert not plan2.tag_hints and (v2 is None or not v2.tag_hints)
+    feats, feats_v2, labels, baseline = {}, {}, {}, {}
+    for match_id in args.matches:
+        table, labels[match_id] = load_idsse_cached(match_id)
+        for case in practice.all_cases([match_id]):
+            _, level, style, seed = case
+            messy = degrade(table, LEVELS[level], seed, *practice.split_style(style))
+            s = score(labels[match_id], smooth(nearest_team(messy), BASELINE_WINDOW))
+            baseline[case] = (float(s["spell_f1"]), float(s["macro_f1"]))
+            feats[case] = features(messy, plan2.clues)
+            if v2 is not None:
+                feats_v2[case] = features(messy, v2.clues)
+        log("{} ready".format(match_id))
+    results = {"baseline": baseline, "plan2": practice.score_point(feats, labels, plan2)}
+    if v2 is not None:
+        results["v2"] = practice.score_point(feats_v2, labels, v2)
+    practice.save_results(args.results_dir / "start.json", results)
+    log("scored, wrote start.json")
+
+    print()
+    print("Degrade v{}: {} cases ({} matches x {} levels x {} mess styles x {} seeds)".format(
+        DEGRADE_VERSION, len(baseline), len(args.matches), len(LEVELS), len(practice.STYLES), len(practice.SEEDS)))
+    print_header()
+    for name in results:
+        # one setting each, so the nested estimate is the plain leave-one-match-out mean
+        print_levels(name, practice.level_means(results[name]), practice.level_means(results[name], index=1))
+        print_style_splits(results[name])
+    spread = practice.seed_spread(results["plan2"])
+    print("Plan 2 seed spread (medium+heavy, seed 0 vs seed 1): {:.4f}".format(spread))
+    print("ACCEPT_BAR: {:.4f}".format(practice.accept_bar(spread)))
+
+
+def print_style_splits(case_scores):
+    for part, label in ((0, "hiding"), (1, "ball")):
+        for value in dict.fromkeys(practice.split_style(st)[part] for st in practice.STYLES):
+            only = {c: v for c, v in case_scores.items() if practice.split_style(c[2])[part] == value}
+            if only:
+                print_levels("  {} {} only".format(value, label), practice.level_means(only))
+
+
+# ---------------------------------------------------------------- state
+
+
+def load_state(results_dir):
+    path = results_dir / "state.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {"steps": {}}
+
+
+def current_best(results_dir, before):
+    """(label, {context: Settings}, {level: nested mean}, bar) of the best version before a step:
+    the last KEEP among the earlier steps, else Plan 2 on degrade v3."""
+    start_results = practice.load_results(results_dir / "start.json")["plan2"]
+    bar = practice.accept_bar(practice.seed_spread(start_results))
+    state = load_state(results_dir)["steps"]
+    for step in reversed(STEP_ORDER[:STEP_ORDER.index(before)]):
+        if state.get(step, {}).get("verdict") == "KEEP":
+            saved = state[step]
+            contexts = {c: settings_from_dict(d) for c, d in saved["contexts"].items()}
+            return step, contexts, saved["levels"], bar
+    plan2 = load_settings(CONFIG_DIR / "hmm_v1.json")
+    matches = sorted({case[0] for case in start_results})
+    return "plan2", {c: plan2 for c in [*matches, practice.ALL]}, practice.level_means(start_results), bar
+
+
+def record_step(results_dir, step, levels, contexts, current_label, current_levels, bar):
+    verdict = "KEEP" if practice.accepts(levels, current_levels, bar) else "DROP"
+    state = load_state(results_dir)
+    state["steps"][step] = {
+        "verdict": verdict,
+        "against": current_label,
+        "bar": bar,
+        "levels": levels,
+        "against_levels": current_levels,
+        "contexts": {c: settings_to_dict(s) for c, s in contexts.items()},
+        "chosen": {c: practice.point_name(s) for c, s in contexts.items()},
+    }
+    (results_dir / "state.json").write_text(json.dumps(state, indent=1), encoding="utf-8")
+
+    print()
+    print("Step {} against {} (bar {:.4f}, guard {:.2f})".format(step, current_label, bar, practice.GUARD))
+    print_header()
+    print_levels(current_label, current_levels)
+    print_levels(step + " (nested)", levels)
+    for c, s in contexts.items():
+        print("  {:<7} chose: {}".format(c, practice.point_name(s)))
+    print("VERDICT {}: {}".format(step, verdict))
+    return verdict
+
+
+# ---------------------------------------------------------------- scoring
+
+
+class Scorer:
+    """Scores Settings on every case, working out features once per clue setting."""
+
+    def __init__(self, matches):
+        self.matches = matches
+        self.feats, self.counts, self.labels = {}, {}, None
+
+    def prepare(self, clue_list):
+        missing = [c for c in dict.fromkeys(clue_list) if c not in self.feats]
+        if missing:
+            log("features for {} clue setting(s)".format(len(missing)))
+            by_clues, self.labels = practice.case_features_many(missing, self.matches)
+            for clues, feats in by_clues.items():
+                self.feats[clues] = feats
+                self.counts[clues] = practice.left_out_counts(feats, self.labels)
+
+    def score_many(self, settings_list):
+        self.prepare([s.clues for s in settings_list])
+        out = {}
+        for i, s in enumerate(settings_list, 1):
+            out[practice.point_name(s)] = practice.score_point(self.feats[s.clues], self.labels, s, self.counts[s.clues])
+            log("{}/{} {}  objective {:.4f}".format(i, len(settings_list), practice.point_name(s),
+                                                     practice.objective(out[practice.point_name(s)])))
+        return out
+
+    def forget_except(self, keep):
+        for clues in list(self.feats):
+            if clues not in keep:
+                del self.feats[clues], self.counts[clues]
+
+
+# ---------------------------------------------------------------- step A
+
+
+def search_costs(args):
+    label, contexts, levels_now, bar = current_best(args.results_dir, "A-costs")
+    clues = contexts[practice.ALL].clues
+    assert all(s.clues == clues for s in contexts.values())
+    grid = practice.cost_grid(clues)[: args.limit]
+    results = Scorer(args.matches).score_many(grid)
+    practice.save_results(args.results_dir / "search-costs.json", results)
+    names = [practice.point_name(s) for s in grid]
+    levels, chosen = practice.nested_step(results, {c: names for c in contexts})
+    by_name = dict(zip(names, grid))
+    record_step(args.results_dir, "A-costs", levels, {c: by_name[n] for c, n in chosen.items()}, label, levels_now, bar)
+
+
+def search_clues(args):
+    label, contexts, levels_now, bar = current_best(args.results_dir, "A-clues")
+    if label == "plan2":  # the cost step was dropped: the clue search starts from the cost winner
+        cost_state = load_state(args.results_dir)["steps"]["A-costs"]
+        contexts = {c: settings_from_dict(d) for c, d in cost_state["contexts"].items()}
+        log("A-costs was dropped; starting the clue search from each path's cost winner")
+    scorer = Scorer(args.matches)
+    steps = practice.clue_steps()[: args.limit]
+
+    def score_many(settings_list):
+        out = scorer.score_many(settings_list)
+        scorer.forget_except({s.clues for s in settings_list})
+        return out
+
+    final, results = practice.coordinate_search(contexts, steps, score_many)
+    practice.save_results(args.results_dir / "search-clues.json", results)
+    names = {c: [practice.point_name(s)] for c, s in final.items()}
+    levels, _ = practice.nested_step(results, names)
+    record_step(args.results_dir, "A-clues", levels, final, label, levels_now, bar)
+
+
+# ---------------------------------------------------------------- step B
+
+
+def search_gaps(args):
+    """Each path tries every gap length from its own best settings so far. Points already scored
+    in the clue search (no filling) are reused, not scored again."""
+    label, contexts, levels_now, bar = current_best(args.results_dir, "B-gaps")
+    earlier = args.results_dir / "search-clues.json"
+    cached = practice.load_results(earlier) if earlier.is_file() and args.limit is None else {}
+    scorer = Scorer(args.matches)
+
+    def score_many(settings_list):
+        out = scorer.score_many(settings_list)
+        scorer.forget_except(set())
+        return out
+
+    final, results = practice.coordinate_search(contexts, practice.gap_steps(), score_many, cached)
+    tried = {practice.point_name(replace(s, clues=replace(s.clues, gap_fill_frames=g)))
+             for s in contexts.values() for g in practice.GAP_GRID}
+    practice.save_results(args.results_dir / "search-gaps.json", {n: results[n] for n in results if n in tried})
+    levels, _ = practice.nested_step(results, {c: [practice.point_name(s)] for c, s in final.items()})
+    record_step(args.results_dir, "B-gaps", levels, final, label, levels_now, bar)
+
+
+# ---------------------------------------------------------------- step C
+
+
+def search_touch(args):
+    """Each path tries every discount and window from its own best settings so far. Nothing is
+    reused from earlier runs: the decoder now rounds scores to 6 decimals, so the no-discount point
+    is scored again too (and shows what the rounding changed)."""
+    label, contexts, levels_now, bar = current_best(args.results_dir, "C-touch")
+    grids = {c: practice.touch_grid(s)[: args.limit] for c, s in contexts.items()}
+    unique = list({practice.point_name(s): s for grid in grids.values() for s in grid}.values())
+    results = Scorer(args.matches).score_many(unique)
+    practice.save_results(args.results_dir / "search-touch.json", results)
+    names = {c: [practice.point_name(s) for s in grid] for c, grid in grids.items()}
+    levels, chosen = practice.nested_step(results, names)
+    by_name = {practice.point_name(s): s for s in unique}
+    record_step(args.results_dir, "C-touch", levels, {c: by_name[n] for c, n in chosen.items()}, label, levels_now, bar)
+    rescored, _ = practice.nested_step(results, {c: names[c][:1] for c in names})
+    print_levels("no discount, rescored (rounding)", rescored)
+
+
+# ---------------------------------------------------------------- step D
+
+
+def search_scorer(args):
+    """The learned scorer in place of the tally's H versus A part, with the costs searched again on
+    a 3 x 3 x 3 grid around each path's own. Every case is scored with a scorer (and a tally for
+    players' speed) that never saw its match. The scorer trained on all 7 is saved for the record."""
+    label, contexts, levels_now, bar = current_best(args.results_dir, "D-scorer")
+    grids = {c: practice.scorer_cost_grid(s)[: args.limit] for c, s in contexts.items()}
+    results = {}
+    for clues in dict.fromkeys(s.clues for s in contexts.values()):
+        log("scorer features for {}".format(practice.point_name(replace(next(
+            s for s in contexts.values() if s.clues == clues), scorer="model"))))
+        feats, labels, scorers = practice.scorer_case_features(clues, args.matches, log)
+        if contexts[practice.ALL].clues == clues:
+            (args.results_dir / "scorer-all.json").write_text(scorers[practice.ALL].to_json(), encoding="utf-8")
+            log("hint weight of the scorer trained on all 7: {:.4f}".format(scorers[practice.ALL].hint_weight))
+        counts = practice.left_out_counts(feats, labels)
+        points = {practice.point_name(s): s for c, grid in grids.items() if contexts[c].clues == clues for s in grid}
+        for i, (name, s) in enumerate(points.items(), 1):
+            results[name] = practice.score_point(feats, labels, s, counts)
+            log("{}/{} {}  objective {:.4f}".format(i, len(points), name, practice.objective(results[name])))
+        del feats
+    practice.save_results(args.results_dir / "search-scorer.json", results)
+    names = {c: [practice.point_name(s) for s in grid] for c, grid in grids.items()}
+    levels, chosen = practice.nested_step(results, names)
+    by_name = {practice.point_name(s): s for grid in grids.values() for s in grid}
+    record_step(args.results_dir, "D-scorer", levels, {c: by_name[n] for c, n in chosen.items()}, label, levels_now, bar)
+
+
+# ---------------------------------------------------------------- step E and the freeze
+
+
+def search_final(args):
+    """The costs once more on the final version (settings interact), 3 x 3 x 3 around each path's
+    own. Judged by the same acceptance rule as every step, so the costs change only if the change
+    carries over to matches the search never saw. Also prints the selection gap: the shipped
+    choice on the matches it was chosen on, against the nested estimate."""
+    label, contexts, levels_now, bar = current_best(args.results_dir, "E-final")
+    grids = {c: practice.final_cost_grid(s)[: args.limit] for c, s in contexts.items()}
+    unique = list({practice.point_name(s): s for grid in grids.values() for s in grid}.values())
+    results = Scorer(args.matches).score_many(unique)
+    practice.save_results(args.results_dir / "search-final.json", results)
+    names = {c: [practice.point_name(s) for s in grid] for c, grid in grids.items()}
+    levels, chosen = practice.nested_step(results, names)
+    by_name = {practice.point_name(s): s for s in unique}
+    verdict = record_step(args.results_dir, "E-final", levels, {c: by_name[n] for c, n in chosen.items()},
+                          label, levels_now, bar)
+    rescored, _ = practice.nested_step(results, {c: names[c][:1] for c in names})
+    print_levels(label + ", rescored", rescored)
+    for title, picks in (("E-final", chosen), (label, {c: names[c][0] for c in names})):
+        in_sample, nested = practice.selection_gap(results, picks)
+        print("selection gap {:<10} in-sample {:.4f}  nested {:.4f}  gap {:.4f}".format(
+            title, in_sample, nested, in_sample - nested))
+    return verdict
+
+
+def compare_v2(args):
+    """Degrade v4 rerun (spec section 10): the new step A replaces hmm_v2.json only if its nested
+    scores beat hmm_v2.json's on the same cases by the acceptance rule. Returns the verdict."""
+    start_results = practice.load_results(args.results_dir / "start.json")
+    bar = practice.accept_bar(practice.seed_spread(start_results["plan2"]))
+    v2_levels = practice.level_means(start_results["v2"])
+    state = load_state(args.results_dir)
+    rerun = state["steps"]["A-clues"]
+    verdict = "KEEP" if practice.accepts(rerun["levels"], v2_levels, bar) else "DROP"
+    state["steps"]["A-vs-v2"] = {"verdict": verdict, "against": "v2", "bar": bar,
+                                 "levels": rerun["levels"], "against_levels": v2_levels}
+    (args.results_dir / "state.json").write_text(json.dumps(state, indent=1), encoding="utf-8")
+    print("Degrade v4 rerun of step A against hmm_v2.json (bar {:.4f}, guard {:.2f})".format(bar, practice.GUARD))
+    print_header()
+    print_levels("hmm_v2.json (fixed)", v2_levels)
+    print_levels("A rerun (nested)", rerun["levels"])
+    print("VERDICT A-vs-v2: {} ({})".format(verdict, "ship the rerun" if verdict == "KEEP" else "hmm_v2.json stays"))
+    return verdict
+
+
+def freeze(args):
+    """hmm_v2.json from the last KEEP (tag hints off), and the tally that ships: learned on every
+    practice case of all 7 IDSSE matches with the shipped clue settings."""
+    steps = load_state(args.results_dir)["steps"]
+    if "A-vs-v2" in steps:
+        if steps["A-vs-v2"]["verdict"] != "KEEP":
+            raise SystemExit("A-vs-v2 is DROP: hmm_v2.json stays as it is")
+        order = ("A-costs", "A-clues")
+    elif "E-final" in steps:
+        order = STEP_ORDER
+    else:
+        raise SystemExit("run search-final (or compare-v2 for the v4 rerun) first")
+    shipped = practice.shipped_settings(steps, order, load_settings(CONFIG_DIR / "hmm_v1.json"))
+    (CONFIG_DIR / "hmm_v2.json").write_text(json.dumps(settings_to_dict(shipped), indent=1) + "\n", encoding="utf-8")
+    log("wrote hmm_v2.json: {}".format(practice.point_name(shipped)))
+    if shipped.scorer == "model":
+        SCORER_PATH.write_text((args.results_dir / "scorer-all.json").read_text(encoding="utf-8"), encoding="utf-8")
+        log("wrote " + SCORER_PATH.name)
+    by_clues, labels = practice.case_features_many([shipped.clues], MATCH_IDS)
+    total = practice.all_counts(by_clues[shipped.clues], labels)
+    save_counts(total, EVIDENCE_PATH)
+    log("wrote {} ({} team frames, {} slow frames, {} cases)".format(
+        EVIDENCE_PATH.name, total.team.sum(), total.slow.sum(), len(by_clues[shipped.clues])))
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("command", choices=["start", "search-costs", "search-clues", "search-gaps",
+                                                 "search-touch", "search-scorer", "search-final", "freeze",
+                                                 "compare-v2"])
+    parser.add_argument("--results-dir", type=Path, default=RESULTS_DIR)
+    parser.add_argument("--matches", default=",".join(MATCH_IDS), help="for quick checks only")
+    parser.add_argument("--limit", type=int, default=None, help="first N points or steps, for quick checks only")
+    args = parser.parse_args(argv)
+    args.matches = args.matches.split(",")
+    args.results_dir.mkdir(parents=True, exist_ok=True)
+    log("plan3 {} on {} matches".format(args.command, len(args.matches)))
+    {"start": start, "search-costs": search_costs, "search-clues": search_clues,
+     "search-gaps": search_gaps, "search-touch": search_touch,
+     "search-scorer": search_scorer, "search-final": search_final, "freeze": freeze,
+     "compare-v2": compare_v2}[args.command](args)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

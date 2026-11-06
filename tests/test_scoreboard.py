@@ -16,3 +16,18 @@ def test_score_reports_the_headline_numbers():
     assert s["macro_f1"] == 1.0
     assert s["n_pred_spells"] == s["n_gt_spells"] == 2
 
+
+
+def test_idsse_features_use_the_given_clues(monkeypatch):
+    # the scoreboard must score the decoder we ship, clue settings included
+    from dataclasses import replace
+    from remontada import lomo
+    from remontada.clues import DEFAULT_CLUES
+    seen = []
+    monkeypatch.setattr(lomo, "MATCH_IDS", ["m1"])
+    monkeypatch.setattr(lomo, "load_idsse_cached", lambda match_id: ("table", "labels"))
+    monkeypatch.setattr(lomo, "degrade", lambda table, level, seed: table)
+    monkeypatch.setattr(lomo, "features", lambda table, clues=DEFAULT_CLUES: seen.append(clues))
+    clues = replace(DEFAULT_CLUES, control_radius=2.0, control_min_frames=5)
+    lomo.idsse_features(0, clues)
+    assert len(seen) == 4 and all(c == clues for c in seen)

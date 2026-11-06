@@ -37,43 +37,57 @@ def _nearest_team(home, away):
     return np.where(home <= away, 0, 1).astype(np.int8)
 
 
-def touches(table):
+def touches(table, dv=TOUCH_DV, radius=TOUCH_RADIUS, ignore=None):
     """Team code on frames where the ball's velocity jumps next to a player, -1 elsewhere.
 
-    The jump is |v_after - v_before| over K frames each side; only the largest jump within K
-    frames counts (the first one on a tie).
+    The jump is |v_after - v_before| over K frames each side. Only jumps next to a player can be
+    touches, and of those only the largest within K frames counts (the first one on a tie), so a
+    bigger glitch far from everyone cannot hide a real touch (plan 2 review).
+
+    ignore marks frames whose ball position was not measured (filled gaps, gaps.py): a jump worked
+    out from any of them, so on frames up to K away, is never a touch.
     """
     k, n = BALL_HALF_WINDOW, table.n_frames
     out = np.full(n, -1, dtype=np.int8)
     if n <= 2 * k:
         return out
+    home, away = nearest_by_team(table)
+    with np.errstate(invalid="ignore"):
+        near = np.fmin(home, away) <= radius
+
     b = table.ball_xy
     v_before = (b[k:-k] - b[:-2 * k]) * table.fps / k
     v_after = (b[2 * k:] - b[k:-k]) * table.fps / k
     jump = np.full(n, -np.inf)
     jump[k:-k] = np.nan_to_num(np.hypot(*(v_after - v_before).T), nan=-np.inf)
+    jump[~near] = -np.inf
+    if ignore is not None:
+        jump[within(np.asarray(ignore, dtype=bool), k)] = -np.inf
 
     padded = np.concatenate((np.full(k, -np.inf), jump, np.full(k, -np.inf)))
     window = sliding_window_view(padded, 2 * k + 1)  # window[t] covers t-k..t+k
     peak = (jump >= window.max(axis=1)) & (jump > window[:, :k].max(axis=1))
 
-    home, away = nearest_by_team(table)
-    with np.errstate(invalid="ignore"):
-        near = np.fmin(home, away) <= TOUCH_RADIUS
-    hit = peak & (jump >= TOUCH_DV) & near
+    hit = peak & (jump >= dv)
     out[hit] = _nearest_team(home, away)[hit]
     return out
 
 
-def control(table):
-    """Team code on frames inside a run of at least CONTROL_MIN_FRAMES where that team's nearest
-    player is within CONTROL_RADIUS and nearer than the other team's; -1 elsewhere."""
+def within(mask, k):
+    """True on frames up to k away from a True frame of mask."""
+    padded = np.concatenate((np.zeros(k, dtype=bool), mask, np.zeros(k, dtype=bool)))
+    return sliding_window_view(padded, 2 * k + 1).any(axis=1)
+
+
+def control(table, radius=CONTROL_RADIUS, min_frames=CONTROL_MIN_FRAMES):
+    """Team code on frames inside a run of at least min_frames where that team's nearest player
+    is within radius and nearer than the other team's; -1 elsewhere."""
     home, away = nearest_by_team(table)
     out = np.full(table.n_frames, -1, dtype=np.int8)
     with np.errstate(invalid="ignore"):
-        owners = ((home <= CONTROL_RADIUS) & (home < away), (away <= CONTROL_RADIUS) & (away < home))
+        owners = ((home <= radius) & (home < away), (away <= radius) & (away < home))
     for team, owner in enumerate(owners):
-        out[runs_at_least(owner, CONTROL_MIN_FRAMES)] = team
+        out[runs_at_least(owner, min_frames)] = team
     return out
 
 

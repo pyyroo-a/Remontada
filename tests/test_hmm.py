@@ -51,3 +51,69 @@ def test_speed():
     start = time.perf_counter()
     viterbi(s, Costs(8, 8, 8))
     assert time.perf_counter() - start < 10
+
+
+def _path_value(s, path, costs, bonus):
+    from remontada.hmm import _cost_matrix
+    cost = _cost_matrix(costs)
+    value = s[0, path[0]]
+    for t in range(1, len(path)):
+        j, k = path[t - 1], path[t]
+        value += s[t, k] - (0.0 if j == k else max(cost[j, k] - bonus[t, k], 0.0))
+    return value
+
+
+def test_entry_bonus_matches_brute_force():
+    import itertools
+    rng = np.random.default_rng(7)
+    mismatches = 0
+    for _ in range(300):
+        n = int(rng.integers(1, 7))
+        s = rng.normal(size=(n, 3))
+        bonus = rng.uniform(0, 4, size=(n, 3)) * (rng.uniform(size=(n, 3)) < 0.5)
+        costs = Costs(*rng.uniform(0.1, 3, size=3))
+        best = max(_path_value(s, p, costs, bonus) for p in itertools.product(range(3), repeat=n))
+        got = _path_value(s, viterbi(s, costs, entry_bonus=bonus), costs, bonus)
+        mismatches += abs(best - got) > 1e-9
+    assert mismatches == 0
+
+
+def test_no_bonus_is_the_old_decoder():
+    s = np.random.default_rng(3).normal(size=(2, 400, 3))
+    costs = Costs(2, 3, 1.5)
+    np.testing.assert_array_equal(viterbi(s, costs, entry_bonus=np.zeros_like(s)), viterbi(s, costs))
+
+
+def test_a_bonus_bigger_than_the_cost_never_makes_switching_free_to_flicker():
+    s = np.zeros((40, 3)); s[:, H] = 1
+    bonus = np.zeros((40, 3)); bonus[:, A] = 100.0
+    assert (viterbi(s, Costs(5, 5, 5), entry_bonus=bonus) == H).all()
+
+
+def test_switch_lands_on_the_touch():
+    # H evidence fades over frames 10..30 and A grows (tied at 20, A ahead from 21); a touch by A at 25
+    s = np.zeros((40, 3))
+    fade = np.clip((np.arange(40) - 10) / 20, 0, 1)
+    s[:, H], s[:, A] = 1 - fade, fade
+    costs = Costs(5, 50, 50)
+    assert int(np.argmax(viterbi(s, costs) == A)) == 21
+    bonus = np.zeros((40, 3)); bonus[25, A] = 5.0
+    assert int(np.argmax(viterbi(s, costs, entry_bonus=bonus) == A)) == 25
+
+
+def test_decode_runs_passes_the_bonus_per_run():
+    s = np.zeros((81, 3))
+    fade = np.clip((np.arange(40) - 10) / 20, 0, 1)
+    for a in (0, 41):
+        s[a:a + 40, H], s[a:a + 40, A] = 1 - fade, fade
+    bonus = np.zeros((81, 3)); bonus[25, A] = bonus[41 + 22, A] = 5.0
+    out = decode_runs(s, [(0, 40), (41, 81)], Costs(5, 50, 50), entry_bonus=bonus)
+    assert int(np.argmax(out[:40] == A)) == 25 and int(np.argmax(out[41:] == A)) == 22
+    assert out[40] == X
+
+
+def test_decode_runs_rounds_scores_to_6_decimals():
+    # A is ahead by far less than a millionth: after rounding it is a tie, which goes to H
+    s = np.array([[0.5, 0.5 + 1e-9, 0.0]])
+    assert viterbi(s, Costs(1, 1, 1))[0] == A
+    assert decode_runs(s, [(0, 1)], Costs(1, 1, 1))[0] == H

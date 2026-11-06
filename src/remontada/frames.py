@@ -1,5 +1,5 @@
 """One shape for every match: per frame, the ball and every tracked object, in metres."""
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 
@@ -30,3 +30,14 @@ class FrameTable:
         # Never the arrays: a printed table or a failed test must not show match data.
         return "FrameTable({}, frames={}, slots={})".format(
             self.match_id, self.n_frames, self.player_xy.shape[1])
+
+
+def run_slice(table, start, stop):
+    """Rows start:stop as a table of their own, graded as one run (used to keep clues per half)."""
+    return replace(
+        table,
+        ball_xy=table.ball_xy[start:stop],
+        ball_z=table.ball_z[start:stop],
+        player_xy=table.player_xy[start:stop],
+        graded_runs=[(0, stop - start)],
+    )
