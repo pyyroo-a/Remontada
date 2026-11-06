@@ -94,8 +94,9 @@ def test_hiding_prefers_hard_frames(clean_table):
 
 
 def test_version_and_hiding_styles():
-    assert degrade_module.DEGRADE_VERSION == 3
+    assert degrade_module.DEGRADE_VERSION == 4
     assert degrade_module.HIDING_STYLES == ("hard", "random")
+    assert degrade_module.BALL_STYLES == ("rough", "smooth")
 
 
 def test_ball_wobble_drifts_slowly(clean_table):
@@ -127,3 +128,26 @@ def test_hard_hiding_is_the_default(clean_table):
 def test_unknown_hiding_style_is_refused(clean_table):
     with pytest.raises(ValueError):
         degrade(clean_table, LEVELS["medium"], seed=0, hiding="sideways")
+
+
+def test_smooth_ball_changes_only_the_ball(clean_table):
+    # degrade v4: same hidden frames, player wobble and track breaks; only the ball is not wobbled
+    rough = degrade(clean_table, LEVELS["heavy"], seed=2, hiding="random")
+    smooth = degrade(clean_table, LEVELS["heavy"], seed=2, hiding="random", ball="smooth")
+    np.testing.assert_array_equal(smooth.player_xy, rough.player_xy)
+    np.testing.assert_array_equal(smooth.player_team, rough.player_team)
+    np.testing.assert_array_equal(np.isnan(smooth.ball_xy), np.isnan(rough.ball_xy))
+    seen = ~np.isnan(smooth.ball_xy[:, 0])
+    np.testing.assert_array_equal(smooth.ball_xy[seen], clean_table.ball_xy[seen])
+    assert not np.array_equal(rough.ball_xy[seen], clean_table.ball_xy[seen])
+
+
+def test_rough_ball_is_the_default(clean_table):
+    a = degrade(clean_table, LEVELS["medium"], seed=3)
+    b = degrade(clean_table, LEVELS["medium"], seed=3, ball="rough")
+    np.testing.assert_array_equal(a.ball_xy, b.ball_xy)
+
+
+def test_unknown_ball_style_is_refused(clean_table):
+    with pytest.raises(ValueError):
+        degrade(clean_table, LEVELS["medium"], seed=0, ball="bouncy")

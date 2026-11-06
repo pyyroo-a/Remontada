@@ -22,7 +22,7 @@ def test_case_names():
     p = _practice()
     assert p.SEEDS == (0, 1) and p.MEDIUM_HEAVY == ("medium", "heavy")
     assert p.LEVEL_NAMES == ("none", "light", "medium", "heavy")
-    assert len(p.all_cases(("m1", "m2"))) == 2 * 4 * 2 * 2
+    assert len(p.all_cases(("m1", "m2"))) == 2 * 4 * 4 * 2  # degrade v4: 4 mess styles
 
 
 def test_level_means_and_objective():
@@ -303,3 +303,31 @@ def test_all_counts_add_every_case_of_every_match():
     mine = feats["m1", "none", "hard", 0].counts(labels["m1"])
     np.testing.assert_array_equal(total.team, left_out["m1"].team + mine.team)
     np.testing.assert_array_equal(total.slow, left_out["m1"].slow + mine.slow)
+
+
+def test_four_mess_styles_hiding_by_ball():
+    p = _practice()
+    assert p.STYLES == ("hard", "random", "hard-smooth", "random-smooth")
+    assert [p.split_style(s) for s in p.STYLES] == [("hard", "rough"), ("random", "rough"),
+                                                    ("hard", "smooth"), ("random", "smooth")]
+    cases = p.all_cases(["m1"])
+    assert len(cases) == 4 * 4 * 2 and {c[2] for c in cases} == set(p.STYLES)
+
+
+def test_results_written_before_v4_still_load(tmp_path):
+    p = _practice()
+    path = tmp_path / "old.json"
+    path.write_text('{"x": {"m1|heavy|hard|1": [0.25, 0.75]}}', encoding="utf-8")
+    assert p.load_results(path) == {"x": {("m1", "heavy", "hard", 1): (0.25, 0.75)}}
+
+
+def test_case_features_degrade_with_the_cases_ball_style(monkeypatch):
+    p = _practice()
+    import remontada.load_idsse as load_idsse
+    table, _ = _toy_match(False)
+    calls = []
+    monkeypatch.setattr(load_idsse, "load_idsse_cached", lambda match_id: (table, None))
+    monkeypatch.setattr(p, "degrade", lambda t, level, seed, hiding, ball: calls.append((hiding, ball, seed)) or t)
+    p.case_features_many([p.DEFAULT_CLUES], ["m1"])
+    assert sorted(set(calls)) == sorted({(h, b, s) for h in ("hard", "random") for b in ("rough", "smooth")
+                                         for s in p.SEEDS})

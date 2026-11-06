@@ -12,14 +12,20 @@ players (real trackers wobble the ball as well), and the ball can be hidden in t
 (v2's way, half of it on hard frames) or "random" (every stretch placed anywhere). We cannot check
 which style is closer to real tracking without looking at our match, so every setting is scored
 under both.
+
+Degrade v4 (Plan 3 review, 6 Nov 2026): v3's ball wobble makes a still ball read 1 to 2 m/s at
+medium and heavy (ball speed is measured over 5 frames), but real trackers usually smooth the ball.
+So the ball comes in two styles too: "rough" (v3's wobble) and "smooth" (no wobble), and every
+setting is scored under both.
 """
 from collections import deque
 from dataclasses import dataclass, replace
 
 import numpy as np
 
-DEGRADE_VERSION = 3
+DEGRADE_VERSION = 4
 HIDING_STYLES = ("hard", "random")
+BALL_STYLES = ("rough", "smooth")  # v4: smooth = the ball is not wobbled (real trackers smooth it)
 SPARE_SLOTS_PER_TEAM = 2
 WOBBLE_TIME_S = 1.0  # how long a wobble takes to fade
 HARD_SHARE = 0.5  # share of the hidden ball frames placed on hard frames first
@@ -131,13 +137,18 @@ def _break_tracks(player_xy, teams, level, fps, rng):
     return out, np.array(output_teams, dtype=np.int8)
 
 
-def degrade(table, level, seed, hiding="hard"):
-    """A messier copy of the table. Same level, seed and hiding style always give the same result.
+def degrade(table, level, seed, hiding="hard", ball="rough"):
+    """A messier copy of the table. Same level, seed, hiding and ball style always give the same
+    result.
 
-    Random draws happen in a fixed order: hide ball, player wobble, ball wobble, track breaks.
+    Random draws happen in a fixed order: hide ball, player wobble, ball wobble, track breaks. A
+    smooth ball still draws its wobble but does not apply it, so a rough and a smooth case differ
+    only in the ball.
     """
     if hiding not in HIDING_STYLES:
         raise ValueError(f"unknown hiding style {hiding!r}, expected one of {HIDING_STYLES}")
+    if ball not in BALL_STYLES:
+        raise ValueError(f"unknown ball style {ball!r}, expected one of {BALL_STYLES}")
     rng = np.random.default_rng(seed)
     ball_xy, ball_z = table.ball_xy, table.ball_z
     if level.ball_hidden_share > 0:
@@ -150,7 +161,8 @@ def degrade(table, level, seed, hiding="hard"):
     player_xy, teams = table.player_xy, table.player_team
     if level.position_noise_m > 0:
         player_xy = _wobble(player_xy, level.position_noise_m, table.fps, rng)
-        ball_xy = _wobble(ball_xy, level.position_noise_m, table.fps, rng)
+        wobbled = _wobble(ball_xy, level.position_noise_m, table.fps, rng)
+        ball_xy = wobbled if ball == "rough" else ball_xy
     if level.track_breaks_per_min > 0:
         player_xy, teams = _break_tracks(player_xy, teams, level, table.fps, rng)
 

@@ -8,6 +8,10 @@
     python scripts/plan3.py search-scorer  # step D: a learned scorer for who has the ball
     python scripts/plan3.py search-final   # step E: the costs once more on the final version
     python scripts/plan3.py freeze         # write hmm_v2.json and the tally that ships
+    python scripts/plan3.py compare-v2     # degrade v4 rerun: does the new step A beat hmm_v2.json?
+
+The degrade v4 rerun (spec section 10) runs start, search-costs, search-clues and compare-v2 with
+--results-dir results/plan3b.
 
 Each step is judged by the acceptance rule against the best version so far and recorded as KEEP
 or DROP in results/plan3/state.json. Every match keeps its own path through the steps (chosen on
@@ -58,35 +62,48 @@ def print_levels(title, levels, macro=None):
 
 
 def start(args):
+    """The baseline, Plan 2 and (once frozen) hmm_v2.json on every case: the numbers to beat."""
     plan2 = load_settings(CONFIG_DIR / "hmm_v1.json")
-    assert not plan2.tag_hints
-    feats, labels, baseline = {}, {}, {}
+    v2_path = CONFIG_DIR / "hmm_v2.json"
+    v2 = load_settings(v2_path) if v2_path.is_file() else None
+    assert not plan2.tag_hints and (v2 is None or not v2.tag_hints)
+    feats, feats_v2, labels, baseline = {}, {}, {}, {}
     for match_id in args.matches:
         table, labels[match_id] = load_idsse_cached(match_id)
         for case in practice.all_cases([match_id]):
-            _, level, hiding, seed = case
-            messy = degrade(table, LEVELS[level], seed, hiding)
+            _, level, style, seed = case
+            messy = degrade(table, LEVELS[level], seed, *practice.split_style(style))
             s = score(labels[match_id], smooth(nearest_team(messy), BASELINE_WINDOW))
             baseline[case] = (float(s["spell_f1"]), float(s["macro_f1"]))
             feats[case] = features(messy, plan2.clues)
+            if v2 is not None:
+                feats_v2[case] = features(messy, v2.clues)
         log("{} ready".format(match_id))
     results = {"baseline": baseline, "plan2": practice.score_point(feats, labels, plan2)}
+    if v2 is not None:
+        results["v2"] = practice.score_point(feats_v2, labels, v2)
     practice.save_results(args.results_dir / "start.json", results)
     log("scored, wrote start.json")
 
     print()
-    print("Degrade v{}: {} cases ({} matches x {} levels x 2 hiding styles x {} seeds)".format(
-        DEGRADE_VERSION, len(baseline), len(args.matches), len(LEVELS), len(practice.SEEDS)))
+    print("Degrade v{}: {} cases ({} matches x {} levels x {} mess styles x {} seeds)".format(
+        DEGRADE_VERSION, len(baseline), len(args.matches), len(LEVELS), len(practice.STYLES), len(practice.SEEDS)))
     print_header()
     for name in results:
         # one setting each, so the nested estimate is the plain leave-one-match-out mean
         print_levels(name, practice.level_means(results[name]), practice.level_means(results[name], index=1))
-        for hiding in ("hard", "random"):
-            only = {c: v for c, v in results[name].items() if c[2] == hiding}
-            print_levels("  {} hiding only".format(hiding), practice.level_means(only))
+        print_style_splits(results[name])
     spread = practice.seed_spread(results["plan2"])
     print("Plan 2 seed spread (medium+heavy, seed 0 vs seed 1): {:.4f}".format(spread))
     print("ACCEPT_BAR: {:.4f}".format(practice.accept_bar(spread)))
+
+
+def print_style_splits(case_scores):
+    for part, label in ((0, "hiding"), (1, "ball")):
+        for value in dict.fromkeys(practice.split_style(st)[part] for st in practice.STYLES):
+            only = {c: v for c, v in case_scores.items() if practice.split_style(c[2])[part] == value}
+            if only:
+                print_levels("  {} {} only".format(value, label), practice.level_means(only))
 
 
 # ---------------------------------------------------------------- state
@@ -310,13 +327,39 @@ def search_final(args):
     return verdict
 
 
+def compare_v2(args):
+    """Degrade v4 rerun (spec section 10): the new step A replaces hmm_v2.json only if its nested
+    scores beat hmm_v2.json's on the same cases by the acceptance rule. Returns the verdict."""
+    start_results = practice.load_results(args.results_dir / "start.json")
+    bar = practice.accept_bar(practice.seed_spread(start_results["plan2"]))
+    v2_levels = practice.level_means(start_results["v2"])
+    state = load_state(args.results_dir)
+    rerun = state["steps"]["A-clues"]
+    verdict = "KEEP" if practice.accepts(rerun["levels"], v2_levels, bar) else "DROP"
+    state["steps"]["A-vs-v2"] = {"verdict": verdict, "against": "v2", "bar": bar,
+                                 "levels": rerun["levels"], "against_levels": v2_levels}
+    (args.results_dir / "state.json").write_text(json.dumps(state, indent=1), encoding="utf-8")
+    print("Degrade v4 rerun of step A against hmm_v2.json (bar {:.4f}, guard {:.2f})".format(bar, practice.GUARD))
+    print_header()
+    print_levels("hmm_v2.json (fixed)", v2_levels)
+    print_levels("A rerun (nested)", rerun["levels"])
+    print("VERDICT A-vs-v2: {} ({})".format(verdict, "ship the rerun" if verdict == "KEEP" else "hmm_v2.json stays"))
+    return verdict
+
+
 def freeze(args):
     """hmm_v2.json from the last KEEP (tag hints off), and the tally that ships: learned on every
     practice case of all 7 IDSSE matches with the shipped clue settings."""
     steps = load_state(args.results_dir)["steps"]
-    if "E-final" not in steps:
-        raise SystemExit("run search-final first")
-    shipped = practice.shipped_settings(steps, STEP_ORDER, load_settings(CONFIG_DIR / "hmm_v1.json"))
+    if "A-vs-v2" in steps:
+        if steps["A-vs-v2"]["verdict"] != "KEEP":
+            raise SystemExit("A-vs-v2 is DROP: hmm_v2.json stays as it is")
+        order = ("A-costs", "A-clues")
+    elif "E-final" in steps:
+        order = STEP_ORDER
+    else:
+        raise SystemExit("run search-final (or compare-v2 for the v4 rerun) first")
+    shipped = practice.shipped_settings(steps, order, load_settings(CONFIG_DIR / "hmm_v1.json"))
     (CONFIG_DIR / "hmm_v2.json").write_text(json.dumps(settings_to_dict(shipped), indent=1) + "\n", encoding="utf-8")
     log("wrote hmm_v2.json: {}".format(practice.point_name(shipped)))
     if shipped.scorer == "model":
@@ -332,7 +375,8 @@ def freeze(args):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("command", choices=["start", "search-costs", "search-clues", "search-gaps",
-                                                 "search-touch", "search-scorer", "search-final", "freeze"])
+                                                 "search-touch", "search-scorer", "search-final", "freeze",
+                                                 "compare-v2"])
     parser.add_argument("--results-dir", type=Path, default=RESULTS_DIR)
     parser.add_argument("--matches", default=",".join(MATCH_IDS), help="for quick checks only")
     parser.add_argument("--limit", type=int, default=None, help="first N points or steps, for quick checks only")
@@ -342,7 +386,8 @@ def main(argv=None):
     log("plan3 {} on {} matches".format(args.command, len(args.matches)))
     {"start": start, "search-costs": search_costs, "search-clues": search_clues,
      "search-gaps": search_gaps, "search-touch": search_touch,
-     "search-scorer": search_scorer, "search-final": search_final, "freeze": freeze}[args.command](args)
+     "search-scorer": search_scorer, "search-final": search_final, "freeze": freeze,
+     "compare-v2": compare_v2}[args.command](args)
     return 0
 
 

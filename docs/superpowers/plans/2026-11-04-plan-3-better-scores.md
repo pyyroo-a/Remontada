@@ -389,6 +389,22 @@ def test_json_round_trip(tmp_path): ...
 - [ ] **Step 3:** Vault: `Plan 3 explained` (plain words, like Plan 2's), hub milestone and decisions, Scoreboard, Plain words guide, Open questions. Team page republished.
 - [ ] **Step 4: Hand-off** of the review fixes; Ashen merges `plan-3-better-scores` into `main` and pushes.
 
+### Task 11: Degrade v4 (a smoother ball) and the weekend rerun of step A
+
+Spec section 10. Added 6 Nov after the final review; Ashen chose the rerun.
+
+**Files:**
+- Modify: `src/remontada/degrade.py` (`DEGRADE_VERSION = 4`, `BALL_STYLES = ("rough", "smooth")`, `degrade(..., ball="rough")`), `src/remontada/practice.py` (`STYLES`, `split_style`, cases over 4 mess styles), `scripts/plan3.py` (`start` also scores `hmm_v2.json`; `compare-v2` applies the rule), tests.
+
+**Interfaces:**
+- Produces: `degrade(table, level, seed, hiding="hard", ball="rough")`; `"smooth"` draws the ball wobble (so every later random draw is the same) but does not apply it. `practice.STYLES = ("hard", "random", "hard-smooth", "random-smooth")`, `practice.split_style(style) -> (hiding, ball)`; a case is `(match, level, style, seed)`; result files written before v4 load unchanged (their styles are rough-ball styles). `plan3.py start` writes "baseline", "plan2" and "v2" to `start.json`; `plan3.py compare-v2` records "A-vs-v2" in `state.json` with KEEP (ship A-v4) or DROP (keep `hmm_v2.json`).
+
+- [ ] **Step 1: Failing tests:** smooth equals rough except the ball, and the smooth ball equals the hidden-only ball; unknown ball style refused; `STYLES` and `split_style`; `all_cases` has 4 styles; old 4-style keys still load; `compare-v2` rule on toy numbers.
+- [ ] **Step 2: Build**, fast suite green.
+- [ ] **Step 3: Run** `start`, `search-costs`, `search-clues`, `compare-v2` with `--results-dir results/plan3b` in the background (about 4 h).
+- [ ] **Step 4:** if KEEP, `freeze` from `results/plan3b`, then the real-data suite and two submission runs (validity and sha256 only). Record the numbers by ball style in the vault and republish the team page.
+- [ ] **Step 5: Hand-off.** Summary: `Degrade v4: a smoother ball, step A rerun`.
+
 ## Not in this plan
 
 Plan 4 (the technical document, README polish, the fresh-download rebuild check, going public, the form). Team shape, heatmaps and Smart Tagging hints (later rounds or never). Any optional experiment after Plan 4.

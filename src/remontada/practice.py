@@ -1,7 +1,8 @@
 """The honest practice harness for Plan 3: every number nested, on IDSSE only.
 
-A case is (match, level, hiding style, seed): 7 matches x 4 levels x 2 hiding styles x 2 seeds =
-112 cases. For a setting, every case is scored with a tally learned without its match. For a
+A case is (match, level, mess style, seed): 7 matches x 4 levels x 4 mess styles (hard or random
+hiding, rough or smooth ball: degrade v4) x 2 seeds = 224 cases. Result files written before v4 hold
+only the two rough-ball styles, named "hard" and "random" as before, and load unchanged. For a setting, every case is scored with a tally learned without its match. For a
 search, every point is scored on every case; then for each match m the point that does best on
 the other six is scored on m (nested_estimate). Ties go to the first point, so reruns agree.
 
@@ -15,7 +16,7 @@ from pathlib import Path
 import numpy as np
 
 from remontada.clues import DEFAULT_CLUES
-from remontada.degrade import HIDING_STYLES, LEVELS, degrade
+from remontada.degrade import BALL_STYLES, HIDING_STYLES, LEVELS, degrade
 from remontada.evidence import Counts
 from remontada.hmm import Costs
 from remontada.lomo import decode_all
@@ -23,6 +24,7 @@ from remontada.pipeline import Settings, features
 from remontada.scoreboard import score
 
 SEEDS = (0, 1)
+STYLES = tuple(h if b == "rough" else h + "-" + b for b in BALL_STYLES for h in HIDING_STYLES)
 LEVEL_NAMES = tuple(LEVELS)
 MEDIUM_HEAVY = ("medium", "heavy")
 BASE_BAR = 0.01  # the smallest rise worth keeping
@@ -30,9 +32,16 @@ SPREAD_LIMIT = 0.005  # a seed spread above this raises the bar to twice the spr
 GUARD = 0.04  # no level may fall by more than this (the organisers' noise band)
 
 
+def split_style(style):
+    """(hiding, ball) of a mess style: "hard" is hard hiding with a rough ball, "hard-smooth" with
+    a smooth one."""
+    hiding, _, ball = style.partition("-")
+    return hiding, ball or "rough"
+
+
 def all_cases(matches):
     """Every case for these matches, in a fixed order."""
-    return [(m, lv, h, s) for m in matches for lv in LEVEL_NAMES for h in HIDING_STYLES for s in SEEDS]
+    return [(m, lv, st, s) for m in matches for lv in LEVEL_NAMES for st in STYLES for s in SEEDS]
 
 
 def case_features(clues=DEFAULT_CLUES, matches=None):
@@ -50,8 +59,8 @@ def case_features_many(clue_list, matches=None):
     for match_id in matches or MATCH_IDS:
         table, labels[match_id] = load_idsse_cached(match_id)
         for case in all_cases([match_id]):
-            _, level, hiding, seed = case
-            messy = degrade(table, LEVELS[level], seed, hiding)
+            _, level, style, seed = case
+            messy = degrade(table, LEVELS[level], seed, *split_style(style))
             for clues in clue_list:
                 by_clues[clues][case] = features(messy, clues)
     return by_clues, labels
@@ -87,14 +96,14 @@ def all_counts(feats, labels):
 def score_point(feats, labels, settings, counts=None):
     """{case: (spellF1, macroF1)}, each case decoded with a tally that never saw its match.
 
-    Decoded in batches of one hiding style and seed at a time, to keep memory bounded. Pass
+    Decoded in batches of one mess style and seed at a time, to keep memory bounded. Pass
     counts (from left_out_counts) to reuse them across settings with the same features.
     """
     counts = counts if counts is not None else left_out_counts(feats, labels)
     out = {}
-    for hiding in HIDING_STYLES:
+    for style in STYLES:
         for seed in SEEDS:
-            batch = {case: f for case, f in feats.items() if case[2] == hiding and case[3] == seed}
+            batch = {case: f for case, f in feats.items() if case[2] == style and case[3] == seed}
             if not batch:
                 continue
             codes = decode_all(batch, counts, settings)

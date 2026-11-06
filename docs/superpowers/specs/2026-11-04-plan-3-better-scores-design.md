@@ -115,3 +115,11 @@ Otherwise it is dropped and the current best stands. Steps run in this order, ea
 ## 9. Left to the builder
 
 Search method and grid points, the gap-length range, the touch window shape, the model family and its clue list within section 5D's limits, code layout, test names, and how the step-by-step record is stored, as long as each choice is measured with the acceptance rule and explained in the technical report.
+
+## 10. Addendum (6 Nov 2026): a smoother ball, the weekend rerun
+
+The final review found that degrade v3's ball wobble (the players' slow drift, 1 s, at 0.25 m medium and 0.50 m heavy) makes a still ball read about 1 m/s at medium and 2 m/s at heavy, because ball speed is measured over 5 frames. So at the levels every step is judged on, "ball still" barely fires and noise looks like touches. Real trackers usually smooth the ball, and we cannot check our match. Ashen chose a rerun over accepting it as a limitation. Decided before any score of the rerun:
+
+- **Degrade v4:** every case is also counted with a **smooth ball** (no ball wobble; the hidden frames, player wobble and track breaks stay exactly the same, so the two ball styles are a fair pair). So 4 mess styles (hard or random hiding, rough or smooth ball) x 7 matches x 4 levels x 2 seeds = 224 cases. The truth lies somewhere between the two ball styles, so both count equally, like the two hiding styles.
+- **Rerun:** `start` (baseline, Plan 2 and the shipped `hmm_v2.json`) and step A (`search-costs`, `search-clues`) on v4, with step A's grids unchanged, into `results/plan3b/`. Steps B to E are not rerun (each was dropped; the weekend has room for step A only).
+- **Decision rule:** the new step A ("A-v4", the "all" path) replaces `hmm_v2.json` only if its nested medium + heavy mean on v4 beats `hmm_v2.json`'s v4 score by at least the bar (0.01, or twice the v4 seed spread if larger) and no level falls more than 0.04 below it. Otherwise `hmm_v2.json` stays. `hmm_v2.json`'s v4 score uses its fixed settings, chosen on these same matches under v3, which slightly favours it, so the rule leans towards keeping what we have.
