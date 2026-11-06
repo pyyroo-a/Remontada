@@ -1,3 +1,4 @@
+import pytest
 from dataclasses import replace
 
 import numpy as np
@@ -236,3 +237,14 @@ def test_decode_all_moves_the_switch_onto_the_touch():
     for settings, first_a in ((plain, 21), (replace(plain, touch_discount=1.0), 25)):
         got = decode_all({("m1", "none"): f}, {"m1": None}, settings)[("m1", "none")]
         assert int(np.argmax(got == A)) == first_a
+
+
+def test_the_old_tuner_can_no_longer_overwrite_the_shipped_tally():
+    # plan 3 review: tune_rough --write-counts wrote evidence_idsse.json with plan 2's recipe,
+    # silently changing the submission; only scripts/plan3.py freeze writes it now
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import tune_rough
+    with pytest.raises(SystemExit):
+        tune_rough.main(["--write-counts"])
