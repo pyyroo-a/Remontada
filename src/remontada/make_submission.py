@@ -1,6 +1,9 @@
 """Regenerate our submission from the data bundle with one command.
 
-    python -m remontada.make_submission --method hmm --out outputs/remontada_hmm.csv
+    python -m remontada.make_submission
+
+writes outputs/remontada.csv with our decoder (hmm_v2.json). `--method baseline` writes the official
+baseline instead, and `--out` picks another path.
 
 Prints only that the file is valid (row count, official checker, fingerprint): never label or
 possession counts, rows, positions or frames of the match data (rules clarification, 4 Nov 2026).
@@ -33,11 +36,15 @@ def predict(method):
     raise ValueError("unknown method: {}".format(method))
 
 
-def main(argv=None):
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--method", default="baseline", choices=["baseline", "hmm"])
+    parser.add_argument("--method", default="hmm", choices=["baseline", "hmm"])
     parser.add_argument("--out", default="outputs/remontada.csv")
-    args = parser.parse_args(argv)
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
+    args = parse_args(argv)
 
     labels, runs = predict(args.method)
     masked = mask_ungraded(labels, runs)

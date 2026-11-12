@@ -12,6 +12,9 @@ Label every frame of FC Barcelona vs Athletic Club (199,319 frames of the tactic
 Phase 1 is ranked only on **spellF1** (whole possessions recovered, matched by time overlap at IoU 0.3 to 0.7), with macroF1 as the tie-break. There is no jury, so the score is everything for ranking. But the team's own rule is that **every part must be explainable in plain words**: we must be able to point at any change of possession and say why the system called it. That matters for the technical document, for trusting our own results, and for the later rounds, where a jury does judge.
 
 What the baseline taught us (public 5 minutes, our run of 24 Oct, understanding only):
+
+_Note added 12 Nov 2026: the lines below describe the official baseline on the public 5 minutes. They were written on 24 to 30 Oct for understanding only, as the FAQ then allowed, before the organisers' 4 Nov rules clarification, and were never used to tune or choose anything. The other figures in this document about our match (40.7% of graded frames without the ball, the Smart Tagging counts) are the organisers' own, from `DATA.md`._
+
 - With the ball visible and in play, the nearest player is the wrong team on 22% of frames; one 42.4 s Barça possession flips 24 times in that raw signal.
 - Dead ball is the biggest single miss: 314 of 1,469 dead frames right; two whole stoppages were called live because the ball stayed visible.
 - 80% of its wrong frames had the ball visible; it invents possessions (26 against 17).

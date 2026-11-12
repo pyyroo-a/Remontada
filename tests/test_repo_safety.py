@@ -22,3 +22,8 @@ def test_no_data_files_are_tracked():
 ])
 def test_data_like_files_are_ignored(name):
     assert git("check-ignore", "-q", "--no-index", name).returncode == 0
+
+
+def test_no_csv_outside_vendor_is_tracked():
+    tracked = git("ls-files", "*.csv").stdout.splitlines()
+    assert tracked == ["src/remontada/vendor/BAR-ATH_possession_gt_public.csv"]
