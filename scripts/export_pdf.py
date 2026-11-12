@@ -7,12 +7,15 @@ from any folder. After editing the document (for example the Authors line), run 
 both files.
 """
 import argparse
+import re
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+REPO_URL = "https://github.com/pyyroo-a/Remontada/blob/main/"
+LINK = re.compile(r"\]\((?!https?://|mailto:|#)([^)#]+)(#[^)]*)?\)")
 SOURCE = ROOT / "docs" / "remontada.md"
 TARGET = ROOT / "docs" / "remontada.pdf"
 BROWSERS = ("msedge", "chrome", "google-chrome", "chromium")
@@ -36,6 +39,15 @@ pre { background: #f5f5f5; padding: 0.5em 0.7em; white-space: pre-wrap; }
 a { color: #1a4f9c; }
 @page { size: A4; margin: 18mm 16mm; }
 """
+
+
+def absolute_links(markdown, base):
+    """Relative links (which only work inside the repo) become links to the file on GitHub, so they
+    still work in the PDF instead of pointing at a temporary folder on the machine that built it."""
+    def to_github(match):
+        path = (Path(base) / match.group(1)).resolve().relative_to(ROOT).as_posix()
+        return "]({}{}{})".format(REPO_URL, path, match.group(2) or "")
+    return LINK.sub(to_github, markdown)
 
 
 def find_browser():
@@ -64,11 +76,14 @@ def main(argv=None):
     with tempfile.TemporaryDirectory() as tmp:
         css = Path(tmp) / "style.css"
         css.write_text(STYLE, encoding="utf-8")
+        source = Path(tmp) / "remontada.md"
+        source.write_text(absolute_links(SOURCE.read_text(encoding="utf-8"), SOURCE.parent), encoding="utf-8")
         html = Path(tmp) / "remontada.html"
-        subprocess.run([pandoc, str(SOURCE), "--standalone", "--embed-resources", "--css", str(css),
+        subprocess.run([pandoc, str(source), "--standalone", "--embed-resources", "--css", str(css),
                         "--metadata", "pagetitle=Remontada", "--resource-path", str(SOURCE.parent),
                         "-o", str(html)], check=True)
         out = args.out.resolve()
+        out.unlink(missing_ok=True)  # so a browser that writes nothing can never leave the old PDF behind
         subprocess.run([browser, "--headless=new", "--disable-gpu", "--no-pdf-header-footer",
                         "--print-to-pdf={}".format(out), html.as_uri()], check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

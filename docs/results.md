@@ -5,7 +5,7 @@ Every number on this page is **spellF1 on 7 public Bundesliga matches** (the IDS
 How to read them:
 
 - **Messiness levels.** `none` is the clean data; `light`, `medium` and `heavy` hide the ball for more and longer stretches (10%, 30% and 60% of frames), wobble the positions and break player tracks. Real automatic tracking loses the ball a lot, so we judge every change on the **medium + heavy** mean.
-- **Nested.** Each match is scored with a tally learned without it and with settings picked on the other six matches. So no match helps choose its own settings. (One small, second-order leak: those six were decoded with tallies that included the held-out match, a planned speed shortcut. It is far too small to change a verdict.)
+- **Nested.** Every match is scored with a tally learned without it. Every search (Plan 3 and each of its steps, and the step A rerun) is also nested: each match is scored with settings picked on the other six, so no match helps choose its own settings. Rows with fixed settings (the baseline, Plan 2, and `hmm_v2.json` in the degrade v4 table) are scored as they are; `hmm_v2.json`'s settings were picked on these same matches under degrade v3, and its nested rerun on v4 is shown next to it. (One second-order leak, not measured: the six matches used to pick a match's settings were decoded with tallies that included it, a planned speed shortcut. It is one sixth of each of those tallies.)
 - **Degrade v3 and v4.** Two versions of our practice mess. v3 (112 cases: 7 matches, 4 levels, 2 ways of hiding the ball, 2 random seeds) wobbles the ball like the players. v4 (224 cases) also counts every case with a **smooth ball**, because real trackers usually smooth the ball and we cannot check which is closer to our match.
 - **The rule for keeping a change:** the nested medium + heavy mean must rise by at least 0.01, and no level may fall by more than 0.04. Anything smaller is treated as noise.
 
@@ -27,13 +27,14 @@ The official baseline picks the nearest player and smooths. Plan 2 is our first 
 
 | Plan 3 step | Medium + heavy (nested) | Verdict |
 |---|---|---|
-| A. Wider search of costs, then clues | 0.3734 | KEEP |
+| A, part 1: the costs alone | 0.3539 | DROP |
+| A. Wider search: the costs, then the clues | 0.3734 | KEEP |
 | B. Fill short ball gaps | 0.3809 | DROP |
 | C. Cheaper switches next to a touch | 0.3728 | DROP |
 | D. A small learned scorer | 0.3747 | DROP |
 | E. Costs once more on the final version | 0.3728 | DROP |
 
-Only step A passed the rule; steps B to E were tried and dropped (B rose by 0.0075, under the 0.01 bar). Step A's 0.3734 here is from before the 6-decimal rounding; rescored, it is 0.3735. Details per step: `results/plan3/state.json`.
+Step A's cost search alone (part 1) did not pass; with the clue search on top it did. Steps B to E were tried and dropped (B rose by 0.0075, under the 0.01 bar). Step A's 0.3734 here is from before the 6-decimal rounding; rescored, it is 0.3735. Details per step: `results/plan3/state.json`.
 
 ## Degrade v4: with a smooth ball too
 
@@ -54,7 +55,7 @@ Searching step A again on v4 picked **exactly the settings we ship**, so the rer
 | ball hidden where trackers lose it | 0.3439 | 0.3523 |
 | ball hidden at random | 0.4181 | 0.4324 |
 
-Being honest about this table: our lead over Plan 2 comes from the rough ball. With a smooth ball, Plan 2 is 0.0049 ahead, which is under the 0.01 bar, so by our rule the two are level there. For both decoders, hiding the ball where trackers really lose it (in the air, in crowds) is harder than hiding it at random: where the ball goes missing matters more than how much of it does.
+Being honest about this table: our lead over Plan 2 comes from the rough ball. With a smooth ball, Plan 2 is 0.0049 ahead, which is under the 0.01 bar, so by our rule the two are level there. For both decoders, the hard hiding style (half of the hidden frames placed where trackers usually lose the ball, in the air or in crowds) is harder than hiding it at random: where the ball goes missing matters, not only how much of it does.
 
 ## Overfitting check
 
@@ -63,7 +64,7 @@ Being honest about this table: our lead over Plan 2 comes from the rough ball. W
 | Plan 3 step A (degrade v3) | 0.3739 | 0.3735 | 0.0004 |
 | Step A rerun (degrade v4) | 0.3924 | 0.3926 | -0.0003 |
 
-The selection gap is the shipped choice scored on the matches it was picked on, against the nested score. A big gap would mean the search fits the practice matches rather than finding settings that carry over. Both gaps are far smaller than the 0.01 bar.
+The selection gap is the shipped choice scored on the matches it was picked on, against the nested score. A big gap would mean the search fits the practice matches rather than finding settings that carry over. Both gaps are much smaller than the 0.01 bar.
 
 ## Rerunning the numbers
 

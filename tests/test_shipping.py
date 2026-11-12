@@ -42,6 +42,7 @@ def test_readme_has_the_one_command_and_the_fingerprint():
     readme = _readme()
     assert "python -m remontada.make_submission" in readme
     assert REFERENCE_SHA256 in readme
+    assert "from the repository folder" in readme
 
 
 def test_readme_says_where_it_was_checked():
@@ -51,4 +52,30 @@ def test_readme_says_where_it_was_checked():
 
 def test_readme_has_no_dashes():
     readme = _readme()
-    assert "—" not in readme and "–" not in readme
+    assert "\u2014" not in readme and "\u2013" not in readme
+
+
+def test_no_tracked_text_file_has_dashes():
+    """Team style: no em or en dashes anywhere we write (the vendored upstream files are theirs)."""
+    import subprocess
+    dashes = (chr(0x2014), chr(0x2013))
+    tracked = subprocess.run(["git", "ls-files"], capture_output=True, text=True, cwd=ROOT).stdout.splitlines()
+    offenders = []
+    for name in tracked:
+        if name.startswith("src/remontada/vendor/") or name.endswith((".pdf", ".json")):
+            continue
+        text = (ROOT / name).read_text(encoding="utf-8", errors="ignore")
+        if any(dash in text for dash in dashes):
+            offenders.append(name)
+    assert not offenders, offenders
+
+
+def test_old_docs_note_their_pre_rules_numbers():
+    for name in ("docs/superpowers/specs/2026-10-30-possession-pipeline-design.md",
+                 "docs/superpowers/plans/2026-10-30-plan-1-foundation.md"):
+        assert "Note added 12 Nov 2026" in (ROOT / name).read_text(encoding="utf-8"), name
+
+
+def test_readme_sizes_trace_to_the_download_script():
+    readme = _readme()
+    assert "2.5 GB" not in readme and "20 GB" not in readme

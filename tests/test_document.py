@@ -50,7 +50,7 @@ def test_document_numbers_match_the_results():
 
 def test_document_has_no_dashes():
     text = _doc()
-    assert "—" not in text and "–" not in text
+    assert "\u2014" not in text and "\u2013" not in text
 
 
 def test_document_links_exist():
@@ -65,3 +65,35 @@ def test_export_reports_missing_tools(monkeypatch):
     monkeypatch.setattr(export_pdf, "EDGE_PATHS", ())
     with pytest.raises(SystemExit, match="pandoc"):
         export_pdf.main([])
+
+
+def test_pdf_has_no_local_links():
+    pdf = (ROOT / "docs" / "remontada.pdf").read_bytes()
+    assert b"file:" not in pdf and b"AppData" not in pdf
+
+
+def test_relative_links_become_github_links():
+    text = "[a](results.md) and [b](../README.md#setup) and [c](https://x.org/y)"
+    out = export_pdf.absolute_links(text, ROOT / "docs")
+    assert "(https://github.com/pyyroo-a/Remontada/blob/main/docs/results.md)" in out
+    assert "(https://github.com/pyyroo-a/Remontada/blob/main/README.md#setup)" in out
+    assert "(https://x.org/y)" in out
+
+
+def test_export_fails_when_the_browser_writes_nothing(monkeypatch, tmp_path):
+    stale = tmp_path / "old.pdf"
+    stale.write_bytes(b"%PDF old")
+    monkeypatch.setattr(export_pdf.shutil, "which", lambda name: "C:/fake/" + name)
+    monkeypatch.setattr(export_pdf.subprocess, "run", lambda *a, **k: None)
+    with pytest.raises(SystemExit, match="did not write"):
+        export_pdf.main(["--out", str(stale)])
+
+
+def test_document_claims_only_what_was_measured():
+    text = _doc()
+    for overclaim in ("Every score is", "far below", "did not fit", "exactly where possession changes",
+                      "only input at prediction time"):
+        assert overclaim not in text, overclaim
+    assert "issue #15" in text  # the look-ahead permission, cited
+    training = text.split("## Training data", 1)[1].split("## Possession rules", 1)[0]
+    assert "labelled" in training and "none by us" in training

@@ -8,8 +8,8 @@ Team Remontada's entry for **More than a Hack 2027, Phase 1**: label every frame
 ## Requirements
 
 - Python 3.11.
-- The official competition data bundle (about 20 GB). It is licensed for the competition only and is **never** in this repository.
-- Only for rerunning the practice searches: the public IDSSE dataset (about 2.5 GB). Making the submission does not need it.
+- The official competition data bundle. It is licensed for the competition only and is **never** in this repository.
+- Only for rerunning the practice searches: the public IDSSE dataset (about 3 GB). Making the submission does not need it.
 
 ## Setup
 
@@ -40,11 +40,14 @@ python3.11 -m venv .venv
 
 ## Reproduce the submission
 
-With the virtual environment active and `MTAH_DATA_DIR` set:
+Run it from the repository folder (the file goes to `outputs/` under the folder you run it from), with `MTAH_DATA_DIR` set:
 
 ```bash
-python -m remontada.make_submission
+.venv/Scripts/python -m remontada.make_submission      # Windows
+.venv/bin/python -m remontada.make_submission          # macOS and Linux
 ```
+
+(or `python -m remontada.make_submission` with the virtual environment activated).
 
 It writes `outputs/remontada.csv` with our decoder (settings in `src/remontada/config/hmm_v2.json`, tally in `src/remontada/config/evidence_idsse.json`) and prints only that the file is valid and its fingerprint:
 

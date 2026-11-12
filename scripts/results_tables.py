@@ -2,9 +2,11 @@
 
     python scripts/results_tables.py
 
-All numbers are spellF1 on the 7 IDSSE matches (CC BY 4.0) made messy on purpose, every one nested
-(each match scored with a tally learned without it and settings picked on the other six). Nothing
-here was measured on our match. tests/test_results_tables.py checks that docs/results.md shows
+All numbers are spellF1 on the 7 IDSSE matches (CC BY 4.0) made messy on purpose. Every match is
+scored with a tally learned without it. Searches (Plan 3 and its steps, the step A rerun) are also
+nested: each match is scored with settings picked on the other six. Fixed settings (the baseline,
+Plan 2, and hmm_v2.json in the degrade v4 table) are scored as they are. Nothing here was measured on
+our match. tests/test_results_tables.py checks that docs/results.md shows
 exactly these tables.
 """
 from pathlib import Path
@@ -14,7 +16,8 @@ from remontada.pipeline import settings_from_dict
 
 ROOT = Path(__file__).resolve().parents[1]
 STEP_NAMES = {
-    "A-clues": "A. Wider search of costs, then clues",
+    "A-costs": "A, part 1: the costs alone",
+    "A-clues": "A. Wider search: the costs, then the clues",
     "B-gaps": "B. Fill short ball gaps",
     "C-touch": "C. Cheaper switches next to a touch",
     "D-scorer": "D. A small learned scorer",

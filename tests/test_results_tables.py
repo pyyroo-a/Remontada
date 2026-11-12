@@ -60,4 +60,16 @@ def test_results_page_matches_the_saved_results(name):
 
 def test_results_page_has_no_dashes():
     text = PAGE.read_text(encoding="utf-8")
-    assert "—" not in text and "–" not in text
+    assert "\u2014" not in text and "\u2013" not in text
+
+
+def test_steps_table_lists_every_step():
+    table = results_tables.tables(ROOT / "results")["steps"]
+    assert len(table.splitlines()) == 2 + 6
+    assert "A, part 1: the costs alone" in table
+
+
+def test_results_page_claims_only_what_was_measured():
+    text = PAGE.read_text(encoding="utf-8")
+    assert "far too small" not in text
+    assert "Each match is scored with a tally learned without it and with settings picked" not in text

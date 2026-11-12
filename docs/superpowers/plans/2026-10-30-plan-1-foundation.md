@@ -1,5 +1,7 @@
 # Plan 1: Foundation (data, IDSSE, scoreboard) Implementation Plan
 
+_Note added 12 Nov 2026: this plan predates the organisers' 4 Nov rules clarification. Its baseline check on the public 5 minutes (spellF1 0.3256, the organisers' own figure, and macroF1 0.6207, measured on the public window) was a pipeline check the FAQ then allowed; it was removed on 4 Nov and never used to tune or choose anything._
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** A tested Python package that loads BAR-ATH and IDSSE into one frame-table shape, degrades IDSSE at several levels, reproduces the official baseline byte for byte, scores anything with the official scorer, and writes a valid `remontada.csv` (baseline method for now).

@@ -18,7 +18,7 @@ def test_no_data_files_are_tracked():
 @pytest.mark.parametrize("name", [
     "frames.npz", "frames.npy", "frames.parquet", "cache.pkl", "table.feather",
     "BAR-ATH_frames.npy", "x.xml.part", "remontada.csv", "outputs/remontada.csv",
-    "data/tactical/BAR-ATH_tactical.mp4",
+    "data/tactical/BAR-ATH_tactical.mp4", "docs/remontada.csv", "results/frames.csv",
 ])
 def test_data_like_files_are_ignored(name):
     assert git("check-ignore", "-q", "--no-index", name).returncode == 0

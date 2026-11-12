@@ -16,7 +16,8 @@ DFL_*.xml
 *.parquet
 *.pkl
 *.feather
-/*.csv
+*.csv
+!src/remontada/vendor/BAR-ATH_possession_gt_public.csv
 
 # Local tooling
 .venv/
