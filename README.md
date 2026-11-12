@@ -53,7 +53,7 @@ rows 199319  valid
 sha256 b9c58cf97e4c9c9bf12c298db2760d23dc06717a370cd8e285f87f6ec9e330cd
 ```
 
-That sha256 was checked on Windows 11 with Python 3.11 and the pinned packages, on two runs. The decoder has no randomness. The command runs the same checks as the official validator; to run the official one itself, clone [metrica-sports/more-than-a-hack-2027](https://github.com/metrica-sports/more-than-a-hack-2027) and run `python evaluation/validate_submission.py outputs/remontada.csv` from there (with the path to our file).
+That sha256 was checked on Windows 11 with Python 3.11 and the pinned packages, on two runs and on a fresh clone with a fresh install (12 Nov 2026). The decoder has no randomness. The command runs the same checks as the official validator; to run the official one itself, clone [metrica-sports/more-than-a-hack-2027](https://github.com/metrica-sports/more-than-a-hack-2027) and run `python evaluation/validate_submission.py outputs/remontada.csv` from there (with the path to our file).
 
 `--method baseline` writes the official baseline instead, and `--out` picks another path.
 
