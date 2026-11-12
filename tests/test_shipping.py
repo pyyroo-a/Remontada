@@ -29,3 +29,26 @@ def test_default_method_is_hmm():
     args = make_submission.parse_args([])
     assert args.method == "hmm"
     assert Path(args.out) == Path("outputs/remontada.csv")
+
+
+REFERENCE_SHA256 = "b9c58cf97e4c9c9bf12c298db2760d23dc06717a370cd8e285f87f6ec9e330cd"
+
+
+def _readme():
+    return (ROOT / "README.md").read_text(encoding="utf-8")
+
+
+def test_readme_has_the_one_command_and_the_fingerprint():
+    readme = _readme()
+    assert "python -m remontada.make_submission" in readme
+    assert REFERENCE_SHA256 in readme
+
+
+def test_readme_says_where_it_was_checked():
+    readme = _readme()
+    assert "Windows 11" in readme and "Python 3.11" in readme
+
+
+def test_readme_has_no_dashes():
+    readme = _readme()
+    assert "—" not in readme and "–" not in readme
